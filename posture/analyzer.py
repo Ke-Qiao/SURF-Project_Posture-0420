@@ -1,0 +1,188 @@
+"""Posture analysis engine.
+
+Responsibilities
+    1. ``pick_side``       – auto-detect which body side faces the camera
+    2. ``calc_angle``      – compute the angle at the middle of three points
+    3. ``analyze_posture`` – full pipeline: pick side → angles → score → advice
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
+
+from posture.config import (
+    LEFT_SIDE_IDS,
+    RIGHT_SIDE_IDS,
+    SCORE_WEIGHTS,
+    THRESHOLDS,
+)
+
+# ======================================================================
+# Data classes – structured results
+# ======================================================================
+
+
+@dataclass
+class AngleResult:
+    """Measurement for one body-segment angle."""
+
+    name: str          # e.g. "ear_shoulder_hip"
+    angle: float       # actual angle (degrees)
+    deviation: float   # |180 − angle|
+    threshold: float   # configured threshold
+    is_good: bool      # deviation ≤ threshold?
+    label: str         # human-readable, e.g. "Forward Head"
+
+
+@dataclass
+class PostureResult:
+    """Complete posture-analysis output."""
+
+    detected: bool = False
+    side: str = ""                                           # "left" | "right"
+    angles: List[AngleResult] = field(default_factory=list)
+    score: float = 0.0                                       # 0–100
+    overall_good: bool = True
+    issues: List[str] = field(default_factory=list)
+    advice: List[str] = field(default_factory=list)
+    keypoint_coords: List[Tuple[float, float]] = field(default_factory=list)
+
+
+# ======================================================================
+# Angle metadata (Decision #4: English)
+# ======================================================================
+
+_ANGLE_INFO = {
+    "ear_shoulder_hip": {
+        "label": "Forward Head",
+        "advice": "Tuck your chin and align your ears over your shoulders",
+    },
+    "shoulder_hip_knee": {
+        "label": "Trunk Lean",
+        "advice": "Engage your core and bring pelvis to neutral",
+    },
+    "hip_knee_ankle": {
+        "label": "Knee Hyperextension",
+        "advice": "Soften your knees slightly, avoid locking them",
+    },
+}
+
+# ======================================================================
+# Core functions
+# ======================================================================
+
+
+def pick_side(landmarks) -> Tuple[str, dict]:
+    """Choose the body side that faces the camera.
+
+    Decision #1: compare summed *visibility* of the five key landmarks on
+    each side; the side with the higher total is returned.
+
+    Returns
+        ``("left" | "right", {name: landmark_id})``
+    """
+    left_vis = sum(landmarks[lid].visibility for lid in LEFT_SIDE_IDS.values())
+    right_vis = sum(landmarks[lid].visibility for lid in RIGHT_SIDE_IDS.values())
+    if right_vis >= left_vis:
+        return "right", RIGHT_SIDE_IDS
+    return "left", LEFT_SIDE_IDS
+
+
+def calc_angle(a, b, c) -> float:
+    """Return the angle (degrees) at *b* formed by the line segments *a→b→c*.
+
+    Each argument must expose ``.x`` and ``.y`` attributes (MediaPipe
+    landmark).  Result is clamped to [0, 180].
+    """
+    ba = (a.x - b.x, a.y - b.y)
+    bc = (c.x - b.x, c.y - b.y)
+
+    dot = ba[0] * bc[0] + ba[1] * bc[1]
+    mag_ba = math.hypot(*ba)
+    mag_bc = math.hypot(*bc)
+
+    if mag_ba * mag_bc == 0:
+        return 0.0
+
+    cos_angle = max(-1.0, min(1.0, dot / (mag_ba * mag_bc)))
+    return math.degrees(math.acos(cos_angle))
+
+
+def analyze_posture(landmarks) -> PostureResult:
+    """Run the full posture-analysis pipeline.
+
+    Steps
+        1. Pick the body side facing the camera.
+        2. Extract 5 keypoints (ear / shoulder / hip / knee / ankle).
+        3. Compute 3 joint angles.
+        4. Score each angle against its threshold.
+        5. Produce a weighted overall score and advice list.
+    """
+    result = PostureResult()
+
+    if landmarks is None:
+        return result
+
+    result.detected = True
+
+    # ---- 1. side selection ----
+    side_name, side_ids = pick_side(landmarks)
+    result.side = side_name
+
+    # ---- 2. keypoints ----
+    ear = landmarks[side_ids["ear"]]
+    shoulder = landmarks[side_ids["shoulder"]]
+    hip = landmarks[side_ids["hip"]]
+    knee = landmarks[side_ids["knee"]]
+    ankle = landmarks[side_ids["ankle"]]
+
+    result.keypoint_coords = [
+        (ear.x, ear.y),
+        (shoulder.x, shoulder.y),
+        (hip.x, hip.y),
+        (knee.x, knee.y),
+        (ankle.x, ankle.y),
+    ]
+
+    # ---- 3. angles ----
+    angle_triplets = [
+        ("ear_shoulder_hip", ear, shoulder, hip),
+        ("shoulder_hip_knee", shoulder, hip, knee),
+        ("hip_knee_ankle", hip, knee, ankle),
+    ]
+
+    total_score = 100.0
+
+    for name, pt_a, pt_b, pt_c in angle_triplets:
+        angle = calc_angle(pt_a, pt_b, pt_c)
+        deviation = abs(180.0 - angle)
+        threshold = THRESHOLDS[name]
+        is_good = deviation <= threshold
+        info = _ANGLE_INFO[name]
+
+        result.angles.append(
+            AngleResult(
+                name=name,
+                angle=round(angle, 1),
+                deviation=round(deviation, 1),
+                threshold=threshold,
+                is_good=is_good,
+                label=info["label"],
+            )
+        )
+
+        if not is_good:
+            result.overall_good = False
+            result.issues.append(info["label"])
+            result.advice.append(info["advice"])
+
+            # proportional deduction: fully lost at threshold + 30°
+            weight = SCORE_WEIGHTS[name]
+            excess = deviation - threshold
+            deduction = min(weight, weight * excess / 30.0)
+            total_score -= deduction
+
+    result.score = round(max(0.0, total_score), 1)
+    return result

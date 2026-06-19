@@ -1,0 +1,33 @@
+Week 1 SURF baseline run summary
+
+Python: 3.9.6
+Final package set:
+- numpy 1.26.4
+- matplotlib 3.7.5
+- mediapipe 0.10.8
+- opencv-contrib-python 4.11.0.86
+
+Checks passed:
+- mediapipe.solutions is available
+- cv2.VideoCapture exists
+- imports-ok
+- experiments/photos/good exists
+- experiments/photos/bad exists
+- .venv and experiments/photos are ignored by Git
+- teacher_baseline.py exists
+- docs/week-01-demo-notes.md exists
+- py_compile passes with PYTHONPYCACHEPREFIX=/private/tmp/surf-posture-pyc
+- data/test_sample contains four teacher-dataset sample images
+
+Runtime blockers in this agent environment:
+1. OpenCV camera access denied
+2. MediaPipe Pose initialization failed in sandbox:
+   RuntimeError: Service "kGpuService", required by node
+   posedetectioncpu__ImageToTensorCalculator, was not provided
+   and cannot be created: Could not create an NSOpenGLPixelFormat
+3. main.py --batch data/test_sample is blocked by the same MediaPipe/OpenGL
+   initialization issue in this agent environment
+
+What this means:
+- The teacher code is now matched at the dependency/API level.
+- The remaining issue is local runtime access, not missing Python code.

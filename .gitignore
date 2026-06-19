@@ -1,0 +1,8 @@
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+experiments/photos/
+experiments/baseline-run/*.csv
+data/filtered/
+data/annotated/
