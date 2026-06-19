@@ -138,3 +138,92 @@ frame-read False None
 The code and dependencies are ready for a normal macOS GUI terminal run. The
 remaining failures are caused by this agent session's Camera permission and
 MediaPipe/OpenGL runtime constraints, not by missing project code.
+
+## Week 1 web demo validation
+
+Additional validation was run after adding the lightweight browser demo.
+
+### Files added for the web demo
+
+- `web/app.py`
+- `web/static/index.html`
+- `web/static/styles.css`
+- `web/static/app.js`
+- `posture/pipeline.py`
+- `docs/week-01-web-demo.md`
+- `requirements.txt`
+
+### Behavior added
+
+- `main.py` and `web/app.py` now share the same frame-processing path through
+  `posture.pipeline.annotate_frame`.
+- The existing MediaPipe full-body skeleton is preserved.
+- The side-view five-point overlay is preserved.
+- A dashed ankle-based plumb line is added as a neutral standing reference.
+- The web page supports mode buttons for webcam, image, and video.
+- Uploaded media is stored temporarily outside the Git repository.
+
+### Checks passed
+
+- `teacher_baseline.py`, `main.py`, `posture/*.py`, `scripts/*.py`, and
+  `web/*.py` pass `py_compile` when the pyc cache is redirected to
+  `/private/tmp`.
+- `cv2`, `mediapipe`, `numpy`, `matplotlib`, and `flask` import successfully.
+- `mediapipe.__version__` is `0.10.8`.
+- `hasattr(mediapipe, "solutions")` is `True`.
+- `Flask` version is `3.0.3`.
+- `git diff --check` passes.
+- The Flask app starts on `http://127.0.0.1:5050`.
+- `GET /health` returns HTTP 200.
+- `GET /` returns the web demo HTML.
+- `GET /static/styles.css` returns HTTP 200.
+- Browser DOM validation confirms the webcam, image, and video mode buttons,
+  preview area, overlay legend, and metrics panel render.
+- Browser mode-switch validation confirms the Image button activates the image
+  panel and deactivates the webcam panel.
+- Browser layout validation confirms no horizontal overflow at desktop width
+  `1280px` or mobile width `390px`.
+
+### Checks blocked in the agent environment
+
+`pip check` was attempted and reported:
+
+```text
+mediapipe 0.10.8 is not supported on this platform
+```
+
+Direct import validation still passes for `mediapipe==0.10.8` and
+`hasattr(mediapipe, "solutions")`. The project keeps this version because newer
+MediaPipe builds tested earlier did not expose the teacher-code
+`mp.solutions.pose` API path.
+
+The image API was tested with a sample image:
+
+```bash
+curl -F file=@data/test_sample/24194505-profile-of-a-young-man-walking.jpg \
+  http://127.0.0.1:5050/api/analyze-image
+```
+
+It returned HTTP 503 with a readable MediaPipe/OpenGL sandbox error instead of
+crashing the server.
+
+The webcam stream endpoint was tested:
+
+```bash
+curl --max-time 5 http://127.0.0.1:5050/stream/webcam
+```
+
+It returned HTTP 200 with an MJPEG error frame. Full live webcam validation
+still requires a normal macOS GUI terminal with Camera permission.
+
+The existing batch command was attempted again:
+
+```bash
+.venv/bin/python main.py --batch data/test_sample --output experiments/baseline-run/test-sample-results.csv
+```
+
+It remains blocked by the same MediaPipe/OpenGL sandbox initialization failure:
+
+```text
+RuntimeError: Service "kGpuService", required by node posedetectioncpu__ImageToTensorCalculator, was not provided and cannot be created: Could not create an NSOpenGLPixelFormat
+```

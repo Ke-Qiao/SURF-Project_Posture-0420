@@ -67,3 +67,4 @@ COLOR_BAD = (0, 0, 255)         # red
 COLOR_WHITE = (255, 255, 255)
 COLOR_KEYPOINT = (0, 255, 255)  # cyan – highlighted keypoints
 COLOR_ALIGNMENT = (255, 165, 0) # orange – alignment line
+COLOR_REFERENCE = (190, 190, 190) # gray – posture reference line

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SURF Posture Demo</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>SURF Posture Demo</h1>
+        <p>Week 1 side-view posture baseline</p>
+      </div>
+      <span id="statusBadge" class="status-badge">Ready</span>
+    </header>
+
+    <main class="layout">
+      <section class="controls" aria-label="Input controls">
+        <div class="segmented" role="tablist" aria-label="Input mode">
+          <button class="mode-button active" type="button" data-mode="webcam">Webcam</button>
+          <button class="mode-button" type="button" data-mode="image">Image</button>
+          <button class="mode-button" type="button" data-mode="video">Video</button>
+        </div>
+
+        <div id="webcamPanel" class="mode-panel active">
+          <button id="startWebcam" class="primary-button" type="button">Start camera</button>
+          <button id="stopWebcam" class="secondary-button" type="button">Stop</button>
+        </div>
+
+        <div id="imagePanel" class="mode-panel">
+          <label class="file-picker">
+            <span>Choose image</span>
+            <input id="imageInput" type="file" accept="image/*">
+          </label>
+          <button id="analyzeImage" class="primary-button" type="button">Analyze image</button>
+        </div>
+
+        <div id="videoPanel" class="mode-panel">
+          <label class="file-picker">
+            <span>Choose video</span>
+            <input id="videoInput" type="file" accept="video/*">
+          </label>
+          <button id="playVideo" class="primary-button" type="button">Analyze video</button>
+        </div>
+      </section>
+
+      <section class="viewer" aria-label="Annotated preview">
+        <div class="viewer-header">
+          <span id="modeLabel">Webcam</span>
+          <div class="legend" aria-label="Overlay legend">
+            <span><i class="legend-skeleton"></i>Skeleton</span>
+            <span><i class="legend-keypoint"></i>Side points</span>
+            <span><i class="legend-reference"></i>Plumb line</span>
+          </div>
+        </div>
+        <div class="frame">
+          <img id="previewImage" alt="Annotated posture preview">
+          <div id="emptyState" class="empty-state">Select an input mode</div>
+        </div>
+      </section>
+
+      <aside class="metrics" aria-label="Posture metrics">
+        <div class="metric-row">
+          <span>Posture</span>
+          <strong id="postureValue">-</strong>
+        </div>
+        <div class="metric-row">
+          <span>Score</span>
+          <strong id="scoreValue">-</strong>
+        </div>
+        <div class="metric-row">
+          <span>Side</span>
+          <strong id="sideValue">-</strong>
+        </div>
+        <div id="angleList" class="angle-list"></div>
+        <div id="adviceList" class="advice-list"></div>
+      </aside>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>

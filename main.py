@@ -19,9 +19,8 @@ import sys
 
 import cv2
 
-from posture.analyzer import analyze_posture
 from posture.detector import PoseDetector
-from posture.visualizer import draw_analysis
+from posture.pipeline import annotate_frame
 
 # ======================================================================
 # CLI
@@ -62,12 +61,7 @@ def run_camera(detector: PoseDetector) -> None:
         if not ok:
             break
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = detector.process(rgb)
-
-        detector.draw_skeleton(frame, results)
-        posture = analyze_posture(detector.get_landmarks(results))
-        draw_analysis(frame, posture)
+        annotate_frame(detector, frame)
 
         cv2.imshow("SURF Posture Detection", frame)
         if cv2.waitKey(1) == 27:
@@ -88,12 +82,7 @@ def run_image(detector: PoseDetector, path: str) -> None:
         print(f"Error: cannot read image '{path}'")
         sys.exit(1)
 
-    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    results = detector.process(rgb)
-
-    detector.draw_skeleton(frame, results)
-    posture = analyze_posture(detector.get_landmarks(results))
-    draw_analysis(frame, posture)
+    posture = annotate_frame(detector, frame)
     _print_result(path, posture)
 
     cv2.imshow("SURF Posture Detection", frame)
@@ -120,12 +109,7 @@ def run_video(detector: PoseDetector, path: str) -> None:
         if not ok:
             break
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = detector.process(rgb)
-
-        detector.draw_skeleton(frame, results)
-        posture = analyze_posture(detector.get_landmarks(results))
-        draw_analysis(frame, posture)
+        annotate_frame(detector, frame)
 
         cv2.imshow("SURF Posture Detection", frame)
         if cv2.waitKey(1) == 27:
@@ -175,9 +159,7 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
             print(f"  [SKIP] cannot read: {fname}")
             continue
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = detector.process(rgb)
-        posture = analyze_posture(detector.get_landmarks(results))
+        posture = annotate_frame(detector, frame)
 
         row: dict = {"filename": fname}
         if posture.detected:

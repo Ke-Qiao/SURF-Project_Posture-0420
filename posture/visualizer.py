@@ -14,6 +14,7 @@ from posture.config import (
     COLOR_BAD,
     COLOR_GOOD,
     COLOR_KEYPOINT,
+    COLOR_REFERENCE,
     COLOR_WARNING,
     COLOR_WHITE,
 )
@@ -33,6 +34,17 @@ def _status_color(deviation: float, threshold: float):
     if deviation <= threshold * 2:
         return COLOR_WARNING
     return COLOR_BAD
+
+
+def _draw_dashed_vertical_line(frame, x: int, y1: int, y2: int, color) -> None:
+    """Draw a lightweight plumb line reference for side-view posture."""
+    dash = 10
+    gap = 8
+    cur = y1
+    while cur < y2:
+        end = min(cur + dash, y2)
+        cv2.line(frame, (x, cur), (x, end), color, 1)
+        cur = end + gap
 
 
 def draw_analysis(frame, result: PostureResult) -> None:
@@ -63,6 +75,21 @@ def draw_analysis(frame, result: PostureResult) -> None:
     # -- keypoints & alignment line -----------------------------------
     if result.keypoint_coords:
         px_pts = [(int(x * w), int(y * h)) for x, y in result.keypoint_coords]
+
+        # Plumb line: neutral side-view reference through the ankle.
+        ankle_x, _ = px_pts[-1]
+        top_y = max(0, min(y for _, y in px_pts) - 35)
+        bottom_y = min(h - 1, max(y for _, y in px_pts) + 35)
+        _draw_dashed_vertical_line(frame, ankle_x, top_y, bottom_y, COLOR_REFERENCE)
+        cv2.putText(
+            frame,
+            "plumb line",
+            (max(5, ankle_x + 8), max(18, top_y + 14)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.38,
+            COLOR_REFERENCE,
+            1,
+        )
 
         # alignment line (ear → ankle)
         for i in range(len(px_pts) - 1):

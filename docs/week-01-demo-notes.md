@@ -24,6 +24,7 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 .venv/bin/python main.py
 .venv/bin/python main.py --image data/test_sample/24194505-profile-of-a-young-man-walking.jpg
 .venv/bin/python main.py --batch data/test_sample --output experiments/baseline-run/test-sample-results.csv
+.venv/bin/python -m web.app
 .venv/bin/python scripts/filter_dataset.py --input "/Users/ke-qiao/Desktop/surf/Provided elemnets/archive/images/train" --output data/filtered --resume
 ```
 
@@ -37,6 +38,8 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
   alignments: head, trunk, and knee.
 - Batch mode gives a fast way to inspect multiple teacher images and export CSV
   evidence.
+- The webpage adds a local browser demo for webcam, image, and video inputs,
+  while keeping the same skeleton, side-view keypoints, and rule-based logic.
 - Dataset filtering comes before model training because many source images are
   sitting, front-facing, partial-body, or unsuitable for standing side-view
   posture detection.
@@ -51,8 +54,7 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 - The rule thresholds are initial engineering values and should be tuned after
   more side-view examples are reviewed.
 
-## Next webpage increment
+## Webpage increment
 
-The next round should add a lightweight local webpage for demonstration only.
-It should call the existing analysis path or consume exported results rather
-than redesigning posture detection logic.
+The lightweight local webpage is implemented in `web/`. It calls the existing
+analysis path instead of redesigning posture detection logic.
