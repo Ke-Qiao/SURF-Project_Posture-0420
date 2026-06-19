@@ -344,3 +344,43 @@ Validation results:
   this platform` warning.
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure in this agent session.
+
+## Web demo webcam footer live update
+
+Follow-up changes were made after the webcam view showed skeleton lines but no
+live posture text in the footer:
+
+- Added `GET /stream/webcam-json`.
+- The new endpoint streams newline-delimited JSON containing a JPEG data URL and
+  the current `PostureResult` converted to JSON.
+- Updated the webcam Start button to read this stream with `fetch` instead of
+  using a plain MJPEG `<img>` source.
+- Added a real browser `analysisFooter` below the visual frame.
+- The footer now mirrors the right-side metrics: posture verdict, score, side,
+  per-angle values, deviations, and advice.
+- Added abort handling so Stop or mode switching closes the live stream.
+- Updated the web app health version marker to `webcam-result-stream-v1`.
+
+Validation results:
+
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, and `web/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- `GET /health` returned HTTP 200 with
+  `"version":"webcam-result-stream-v1"`.
+- HTML/JS/CSS validation confirmed `analysisFooter`, `footerPosture`,
+  `/stream/webcam-json`, `readWebcamStream`, and footer styles are present.
+- Browser DOM validation confirmed the footer exists, has initial text, and no
+  horizontal overflow.
+- In this Codex agent session, `/stream/webcam-json` returns the known
+  MediaPipe/OpenGL error as JSON; in a normal macOS Terminal session it is the
+  path that will populate the webcam footer live.
+- Browser button-click automation timed out in this agent browser, so live UI
+  click verification remains manual.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure in this agent session.

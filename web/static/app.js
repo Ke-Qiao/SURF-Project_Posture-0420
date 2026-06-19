@@ -21,9 +21,14 @@ const scoreValue = document.querySelector("#scoreValue");
 const sideValue = document.querySelector("#sideValue");
 const angleList = document.querySelector("#angleList");
 const adviceList = document.querySelector("#adviceList");
+const footerPosture = document.querySelector("#footerPosture");
+const footerMeta = document.querySelector("#footerMeta");
+const footerAngles = document.querySelector("#footerAngles");
+const footerAdvice = document.querySelector("#footerAdvice");
 const imageInput = document.querySelector("#imageInput");
 const videoInput = document.querySelector("#videoInput");
 let selectedMediaUrl = "";
+let activeStreamController = null;
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -49,12 +54,16 @@ function setMode(mode) {
 }
 
 function startWebcam() {
-  showImage(`/stream/webcam?ts=${Date.now()}`);
+  stopActiveStream();
+  clearSelectedMediaUrl();
+  resetMetrics("Starting camera");
   setStatus("Camera", "good");
-  resetMetrics("Live overlay");
+  activeStreamController = new AbortController();
+  readWebcamStream(activeStreamController.signal);
 }
 
 function stopPreview() {
+  stopActiveStream();
   clearSelectedMediaUrl();
   preview.removeAttribute("src");
   previewVideo.removeAttribute("src");
@@ -63,6 +72,49 @@ function stopPreview() {
   previewVideo.classList.remove("active");
   emptyState.style.display = "block";
   setStatus("Ready");
+}
+
+async function readWebcamStream(signal) {
+  try {
+    const response = await fetch(`/stream/webcam-json?ts=${Date.now()}`, { signal });
+    if (!response.ok || !response.body) {
+      throw new Error("Webcam stream could not start.");
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        if (!line.trim()) {
+          continue;
+        }
+        const payload = JSON.parse(line);
+        if (payload.error) {
+          throw new Error(payload.error);
+        }
+        showImage(payload.image);
+        renderMetrics(payload.result);
+        setStatus(payload.result.detected ? "Camera" : "No detection", payload.result.detected ? "good" : "bad");
+      }
+    }
+  } catch (error) {
+    if (signal.aborted) {
+      return;
+    }
+    stopPreview();
+    setStatus("Error", "bad");
+    showError(error.message);
+  }
 }
 
 async function analyzeImage() {
@@ -188,6 +240,11 @@ function resetMetrics(message = "") {
   sideValue.textContent = "-";
   angleList.innerHTML = "";
   adviceList.innerHTML = "";
+  footerPosture.className = "";
+  footerPosture.textContent = message || "Waiting for input";
+  footerMeta.textContent = "Score - / Side -";
+  footerAngles.innerHTML = "";
+  footerAdvice.textContent = "";
 }
 
 function showError(message) {
@@ -197,6 +254,11 @@ function showError(message) {
   sideValue.textContent = "-";
   angleList.innerHTML = "";
   adviceList.innerHTML = "";
+  footerPosture.textContent = "Error";
+  footerPosture.className = "error-text";
+  footerMeta.textContent = "Score - / Side -";
+  footerAngles.innerHTML = "";
+  footerAdvice.textContent = message;
 
   const item = document.createElement("div");
   item.className = "advice-item error-item";
@@ -211,10 +273,19 @@ function renderMetrics(result) {
   sideValue.textContent = result.side || "-";
   angleList.innerHTML = "";
   adviceList.innerHTML = "";
+  footerAngles.innerHTML = "";
+  footerAdvice.textContent = "";
 
   if (!result.detected) {
+    footerPosture.textContent = "No detection";
+    footerPosture.className = "bad";
+    footerMeta.textContent = "Score - / Side -";
     return;
   }
+
+  footerPosture.textContent = result.overall_good ? "Good Posture" : "Bad Posture";
+  footerPosture.className = result.overall_good ? "good" : "bad";
+  footerMeta.textContent = `Score ${result.score}/100 / Side ${result.side || "-"}`;
 
   result.angles.forEach((angle) => {
     const item = document.createElement("div");
@@ -227,7 +298,14 @@ function renderMetrics(result) {
       <div class="angle-detail">Deviation ${angle.deviation} deg / threshold ${angle.threshold} deg</div>
     `;
     angleList.appendChild(item);
+
+    const footerItem = document.createElement("span");
+    footerItem.className = `footer-angle ${angle.is_good ? "good" : "bad"}`;
+    footerItem.textContent = `${angle.label}: ${angle.angle} deg, dev ${angle.deviation} deg`;
+    footerAngles.appendChild(footerItem);
   });
+
+  footerAdvice.textContent = result.advice.slice(0, 2).join(" | ");
 
   result.advice.forEach((advice) => {
     const item = document.createElement("div");
@@ -235,4 +313,11 @@ function renderMetrics(result) {
     item.textContent = advice;
     adviceList.appendChild(item);
   });
+}
+
+function stopActiveStream() {
+  if (activeStreamController) {
+    activeStreamController.abort();
+    activeStreamController = null;
+  }
 }

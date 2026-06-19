@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import os
 import tempfile
 import time
@@ -23,7 +24,7 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "preview-footer-v1"
+APP_VERSION = "webcam-result-stream-v1"
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
@@ -114,6 +115,15 @@ def stream_webcam():
     )
 
 
+@app.get("/stream/webcam-json")
+def stream_webcam_json():
+    """Stream annotated webcam frames with JSON posture metadata."""
+    return Response(
+        _json_frame_stream(0, label="Webcam unavailable"),
+        mimetype="application/x-ndjson",
+    )
+
+
 @app.get("/stream/video/<token>")
 def stream_video(token: str):
     """Stream an uploaded video with the same overlay used by main.py."""
@@ -172,6 +182,41 @@ def _frame_stream(source, label: str):
             detector.close()
 
 
+def _json_frame_stream(source, label: str):
+    detector = None
+    cap = None
+    try:
+        detector = PoseDetector(static_image_mode=False)
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            yield _json_line({"error": label})
+            return
+
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        delay = 1.0 / min(max(fps or 12.0, 1.0), 18.0)
+
+        while True:
+            ok, frame = cap.read()
+            if not ok:
+                break
+            result = annotate_frame(detector, frame, show_text=False)
+            encoded = base64.b64encode(_encode_jpeg(frame)).decode("ascii")
+            yield _json_line(
+                {
+                    "image": f"data:image/jpeg;base64,{encoded}",
+                    "result": result_to_dict(result),
+                }
+            )
+            time.sleep(delay)
+    except Exception as exc:
+        yield _json_line({"error": _runtime_error_message(), "detail": str(exc)})
+    finally:
+        if cap is not None:
+            cap.release()
+        if detector is not None:
+            detector.close()
+
+
 def _single_error_stream(message: str):
     yield _multipart_frame(_error_frame(message))
 
@@ -186,6 +231,10 @@ def _encode_jpeg(frame) -> bytes:
 def _multipart_frame(frame) -> bytes:
     jpeg = _encode_jpeg(frame)
     return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+
+
+def _json_line(payload: dict) -> str:
+    return json.dumps(payload, separators=(",", ":")) + "\n"
 
 
 def _error_frame(message: str):

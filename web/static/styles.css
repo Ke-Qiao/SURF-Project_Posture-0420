@@ -172,7 +172,7 @@ input {
 
 .viewer {
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto auto auto;
   overflow: hidden;
 }
 
@@ -249,6 +249,62 @@ input {
 .empty-state {
   color: #d4ddda;
   font-size: 15px;
+}
+
+.analysis-footer {
+  display: grid;
+  gap: 8px;
+  min-height: 116px;
+  padding: 13px 16px 15px;
+  border-top: 1px solid var(--border);
+  background: #fbfcfb;
+}
+
+.footer-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.footer-main strong {
+  color: var(--text);
+  font-size: 18px;
+}
+
+.footer-main strong.good {
+  color: var(--good);
+}
+
+.footer-main strong.bad,
+.footer-main strong.error-text {
+  color: var(--bad);
+}
+
+.footer-main span,
+.footer-angles,
+.footer-advice {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.footer-angles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.footer-angle.good {
+  color: var(--good);
+}
+
+.footer-angle.bad {
+  color: var(--warn);
+}
+
+.footer-advice {
+  color: var(--warn);
+  overflow-wrap: anywhere;
 }
 
 .metrics {

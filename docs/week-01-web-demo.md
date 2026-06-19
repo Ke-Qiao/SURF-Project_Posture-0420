@@ -48,6 +48,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   streams annotated frames as MJPEG.
 - Image and video files are previewed immediately after selection. Analysis is
   only started when the corresponding Analyze button is pressed.
+- Webcam mode uses a local JSON frame stream so the preview image and live
+  posture footer update together.
 
 ## Overlay contract
 
@@ -60,6 +62,8 @@ The webpage keeps the same core overlay as `main.py`:
 - Overall posture label, score, selected side, angle values, deviations, and
   advice are moved into a footer below the visual frame instead of being drawn
   over the person/image.
+- Webcam live results are rendered in this same browser footer and the
+  right-side metrics panel.
 
 ## Current limits
 
