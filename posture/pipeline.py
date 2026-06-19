@@ -31,11 +31,16 @@ def result_to_dict(result: PostureResult) -> Dict[str, Any]:
     return {
         "detected": result.detected,
         "side": result.side,
-        "score": result.score,
+        "view": result.view,
+        "view_valid": result.view_valid,
+        "message": result.message,
+        "score": result.score if result.view_valid else None,
         "overall_good": result.overall_good,
         "posture": (
             "No detection"
             if not result.detected
+            else "Side view required"
+            if not result.view_valid
             else "Good"
             if result.overall_good
             else "Bad"

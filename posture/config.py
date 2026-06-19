@@ -26,6 +26,18 @@ RIGHT_SIDE_IDS = {
 }
 
 # ---------------------------------------------------------------------------
+# View gate for side-view-only posture rules.
+# If both left/right shoulders or hips are clearly visible and far apart in
+# image x-coordinates, the person is likely front-facing rather than side-view.
+# ---------------------------------------------------------------------------
+
+VIEW_GATE = {
+    "min_pair_visibility": 0.55,
+    "front_shoulder_width": 0.22,
+    "front_hip_width": 0.18,
+}
+
+# ---------------------------------------------------------------------------
 # Angle deviation thresholds (degrees away from 180°)
 # Decision #2: start with experience-based values; interface preserved for
 # future data-driven tuning.

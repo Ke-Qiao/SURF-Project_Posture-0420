@@ -50,6 +50,9 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   only started when the corresponding Analyze button is pressed.
 - Webcam mode uses a local JSON frame stream so the preview image and live
   posture footer update together.
+- Front-facing or otherwise non-side-view inputs are detected as unsupported
+  for the current scoring rule. The page shows `Side view required` instead of
+  computing a misleading Forward Head score.
 
 ## Overlay contract
 
@@ -75,3 +78,6 @@ The webpage keeps the same core overlay as `main.py`:
   crashing or showing the full low-level stack in the UI.
 - Video metrics are drawn on the stream frames. The right-side structured panel
   is currently populated for image mode only.
+- The current posture score is intentionally side-view-only. Front-view
+  analysis is a future model/rule design task, not part of this Week 1
+  baseline.

@@ -267,9 +267,12 @@ function showError(message) {
 }
 
 function renderMetrics(result) {
+  const advice = result.advice || [];
+  const angles = result.angles || [];
+
   postureValue.classList.remove("error-text");
   postureValue.textContent = result.posture || "-";
-  scoreValue.textContent = result.detected ? `${result.score}/100` : "-";
+  scoreValue.textContent = result.detected && typeof result.score === "number" ? `${result.score}/100` : "-";
   sideValue.textContent = result.side || "-";
   angleList.innerHTML = "";
   adviceList.innerHTML = "";
@@ -283,11 +286,28 @@ function renderMetrics(result) {
     return;
   }
 
+  if (result.view_valid === false) {
+    postureValue.textContent = result.posture || "Side view required";
+    scoreValue.textContent = "-";
+    sideValue.textContent = result.view || "-";
+    footerPosture.textContent = result.posture || "Side view required";
+    footerPosture.className = "bad";
+    footerMeta.textContent = result.message || "Turn sideways before scoring";
+    footerAdvice.textContent = advice.slice(0, 2).join(" | ");
+    advice.forEach((adviceText) => {
+      const item = document.createElement("div");
+      item.className = "advice-item";
+      item.textContent = adviceText;
+      adviceList.appendChild(item);
+    });
+    return;
+  }
+
   footerPosture.textContent = result.overall_good ? "Good Posture" : "Bad Posture";
   footerPosture.className = result.overall_good ? "good" : "bad";
   footerMeta.textContent = `Score ${result.score}/100 / Side ${result.side || "-"}`;
 
-  result.angles.forEach((angle) => {
+  angles.forEach((angle) => {
     const item = document.createElement("div");
     item.className = `angle-item ${angle.is_good ? "good" : "bad"}`;
     item.innerHTML = `
@@ -305,12 +325,12 @@ function renderMetrics(result) {
     footerAngles.appendChild(footerItem);
   });
 
-  footerAdvice.textContent = result.advice.slice(0, 2).join(" | ");
+  footerAdvice.textContent = advice.slice(0, 2).join(" | ");
 
-  result.advice.forEach((advice) => {
+  advice.forEach((adviceText) => {
     const item = document.createElement("div");
     item.className = "advice-item";
-    item.textContent = advice;
+    item.textContent = adviceText;
     adviceList.appendChild(item);
   });
 }

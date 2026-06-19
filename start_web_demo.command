@@ -33,11 +33,15 @@ open_demo_url() {
 }
 
 health_body() {
-  /usr/bin/curl -fsS "$1/health" 2>/dev/null || true
+  /usr/bin/curl --max-time 1 -fsS "$1/health" 2>/dev/null || true
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"webcam-result-stream-v1"'* ]]
+  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"side-view-gate-v1"'* ]]
+}
+
+port_is_open() {
+  "$PYTHON_BIN" -c 'import socket, sys; sock = socket.socket(); sock.settimeout(0.5); code = sock.connect_ex(("127.0.0.1", int(sys.argv[1]))); sock.close(); sys.exit(0 if code == 0 else 1)' "$1" >/dev/null 2>&1
 }
 
 pick_available_url() {
@@ -50,12 +54,6 @@ pick_available_url() {
     candidate_url="http://127.0.0.1:${candidate_port}"
     body="$(health_body "$candidate_url")"
 
-    if [[ -z "$body" ]]; then
-      PORT="$candidate_port"
-      URL="$candidate_url"
-      return 0
-    fi
-
     if is_current_demo_server "$body"; then
       PORT="$candidate_port"
       URL="$candidate_url"
@@ -64,8 +62,15 @@ pick_available_url() {
       exit 0
     fi
 
-    echo "Port ${candidate_port} is occupied by another or older local server."
-    candidate_port=$((candidate_port + 1))
+    if [[ -n "$body" ]] || port_is_open "$candidate_port"; then
+      echo "Port ${candidate_port} is occupied by another or older local server."
+      candidate_port=$((candidate_port + 1))
+      continue
+    fi
+
+    PORT="$candidate_port"
+    URL="$candidate_url"
+    return 0
   done
 
   echo "Could not find an available port from ${start_port} to $((start_port + 9))."

@@ -162,7 +162,7 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
         posture = annotate_frame(detector, frame)
 
         row: dict = {"filename": fname}
-        if posture.detected:
+        if posture.detected and posture.view_valid:
             row["side"] = posture.side
             angle_map = {ar.name: ar for ar in posture.angles}
             for n in _ANGLE_NAMES:
@@ -173,6 +173,15 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
             row["posture"] = "Good" if posture.overall_good else "Bad"
             row["issues"] = "; ".join(posture.issues) if posture.issues else ""
             tag = f"[{posture.score}/100 {'Good' if posture.overall_good else 'Bad'}]"
+        elif posture.detected:
+            row["side"] = posture.view
+            for n in _ANGLE_NAMES:
+                row[f"{n}_angle"] = ""
+                row[f"{n}_deviation"] = ""
+            row["score"] = ""
+            row["posture"] = "Side view required"
+            row["issues"] = posture.message
+            tag = "[Side view required]"
         else:
             row["side"] = ""
             for n in _ANGLE_NAMES:
@@ -205,6 +214,10 @@ def _print_result(filename: str, p) -> None:
     """Pretty-print a single PostureResult to the terminal."""
     if not p.detected:
         print(f"  {filename}: no person detected")
+        return
+
+    if not p.view_valid:
+        print(f"  {filename}: side view required ({p.message})")
         return
 
     status = "GOOD" if p.overall_good else "BAD"

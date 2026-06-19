@@ -345,6 +345,54 @@ Validation results:
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure in this agent session.
 
+## Front-view gate for side-view scoring
+
+Follow-up changes were made after the webcam view showed a frontal pose being
+classified as bad because `Forward Head` was computed from the side-view
+`ear-shoulder-hip` angle.
+
+- The existing `Forward Head` metric still means the angle at the shoulder
+  between ear, shoulder, and hip.
+- That metric is valid only for side-view posture, where those landmarks should
+  roughly align in the image plane.
+- In a frontal view, MediaPipe correctly sees both shoulders and both hips far
+  apart horizontally, so forcing either left or right side into a 2D
+  `ear-shoulder-hip` angle creates a projection artifact.
+- Added a conservative view gate in `posture/config.py` and
+  `posture/analyzer.py`.
+- If both left/right shoulders or hips are visible and wide apart, the pipeline
+  returns `Side view required` and does not produce side-view angle scores.
+- Updated CLI batch output, web JSON output, OpenCV footer, and browser metrics
+  to show the unsupported view clearly.
+- Updated the web app health version marker to `side-view-gate-v1`.
+
+Validation results:
+
+- Synthetic landmark validation passed: a frontal pose returns
+  `view="front"`, `view_valid=False`, `posture="Side view required"`, and no
+  side-view angle scores.
+- Synthetic landmark validation passed: a clear side pose still returns
+  `view="side"` and the original three angle scores.
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, and `web/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `node --check web/static/app.js` passed.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- The launcher now treats occupied or stale ports as unavailable even when
+  `/health` times out, then selects the next available port.
+- With an older or stuck service on `5050`, the launcher selected
+  `http://127.0.0.1:5051`.
+- `GET /health` on the updated service returned HTTP 200 with
+  `"version":"side-view-gate-v1"`.
+- Static checks confirmed `index.html` and `app.js` are served by the updated
+  service.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure in this agent session.
+
 ## Web demo webcam footer live update
 
 Follow-up changes were made after the webcam view showed skeleton lines but no

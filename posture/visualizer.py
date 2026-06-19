@@ -74,6 +74,19 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
             )
         return
 
+    if not result.view_valid:
+        if show_text:
+            cv2.putText(
+                frame,
+                "Side view required",
+                (30, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                COLOR_WARNING,
+                2,
+            )
+        return
+
     # -- keypoints & alignment line -----------------------------------
     if result.keypoint_coords:
         px_pts = [(int(x * w), int(y * h)) for x, y in result.keypoint_coords]
@@ -174,7 +187,7 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
 def append_analysis_footer(frame, result: PostureResult):
     """Return a copy of *frame* with posture text moved into a bottom footer."""
     _, w = frame.shape[:2]
-    footer_h = 142 if result.detected else 72
+    footer_h = 142 if result.detected and result.view_valid else 72
     footer = np.full((footer_h, w, 3), (245, 247, 246), dtype=np.uint8)
 
     text = (29, 42, 37)
@@ -188,6 +201,18 @@ def append_analysis_footer(frame, result: PostureResult):
         _put_footer_text(
             footer,
             "Use a clear side view and keep the body landmarks visible.",
+            (18, 58),
+            muted,
+            0.46,
+            1,
+        )
+        return np.vstack([frame, footer])
+
+    if not result.view_valid:
+        _put_footer_text(footer, "Side view required", (18, 30), bad, 0.58, 2)
+        _put_footer_text(
+            footer,
+            result.message or "Turn sideways before running side-view posture scoring.",
             (18, 58),
             muted,
             0.46,

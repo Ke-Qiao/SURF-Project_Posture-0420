@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 from posture.config import (
     LEFT_SIDE_IDS,
     RIGHT_SIDE_IDS,
     SCORE_WEIGHTS,
     THRESHOLDS,
+    VIEW_GATE,
 )
 
 # ======================================================================
@@ -42,6 +43,9 @@ class PostureResult:
 
     detected: bool = False
     side: str = ""                                           # "left" | "right"
+    view: str = "unknown"                                    # "side" | "front"
+    view_valid: bool = True
+    message: str = ""
     angles: List[AngleResult] = field(default_factory=list)
     score: float = 0.0                                       # 0–100
     overall_good: bool = True
@@ -90,6 +94,38 @@ def pick_side(landmarks) -> Tuple[str, dict]:
     return "left", LEFT_SIDE_IDS
 
 
+def is_side_view(landmarks) -> bool:
+    """Return False when the body is clearly front-facing.
+
+    The side-view angle rules are only valid when left/right shoulder and hip
+    landmarks mostly overlap horizontally. In a front view, those paired
+    landmarks are both visible and far apart, so the 2D ear-shoulder-hip angle
+    becomes a projection artifact rather than a forward-head measure.
+    """
+    min_vis = VIEW_GATE["min_pair_visibility"]
+
+    left_shoulder = landmarks[LEFT_SIDE_IDS["shoulder"]]
+    right_shoulder = landmarks[RIGHT_SIDE_IDS["shoulder"]]
+    left_hip = landmarks[LEFT_SIDE_IDS["hip"]]
+    right_hip = landmarks[RIGHT_SIDE_IDS["hip"]]
+
+    shoulders_visible = (
+        left_shoulder.visibility >= min_vis
+        and right_shoulder.visibility >= min_vis
+    )
+    hips_visible = left_hip.visibility >= min_vis and right_hip.visibility >= min_vis
+
+    shoulder_width = abs(left_shoulder.x - right_shoulder.x)
+    hip_width = abs(left_hip.x - right_hip.x)
+
+    if shoulders_visible and shoulder_width >= VIEW_GATE["front_shoulder_width"]:
+        return False
+    if hips_visible and hip_width >= VIEW_GATE["front_hip_width"]:
+        return False
+
+    return True
+
+
 def calc_angle(a, b, c) -> float:
     """Return the angle (degrees) at *b* formed by the line segments *a→b→c*.
 
@@ -126,6 +162,16 @@ def analyze_posture(landmarks) -> PostureResult:
         return result
 
     result.detected = True
+
+    if not is_side_view(landmarks):
+        result.view = "front"
+        result.view_valid = False
+        result.message = "Front view detected. Turn sideways for side-view analysis."
+        result.overall_good = False
+        result.advice.append("Turn to a clear side view before posture scoring")
+        return result
+
+    result.view = "side"
 
     # ---- 1. side selection ----
     side_name, side_ids = pick_side(landmarks)

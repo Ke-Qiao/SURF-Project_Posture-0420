@@ -24,7 +24,7 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "webcam-result-stream-v1"
+APP_VERSION = "side-view-gate-v1"
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
