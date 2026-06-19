@@ -227,3 +227,40 @@ It remains blocked by the same MediaPipe/OpenGL sandbox initialization failure:
 ```text
 RuntimeError: Service "kGpuService", required by node posedetectioncpu__ImageToTensorCalculator, was not provided and cannot be created: Could not create an NSOpenGLPixelFormat
 ```
+
+## Web demo launcher validation
+
+A one-click macOS launcher was added:
+
+```text
+start_web_demo.command
+```
+
+The launcher:
+
+- changes into the project root automatically
+- checks `.venv/bin/python`
+- checks `cv2`, `flask`, and `mediapipe.solutions`
+- starts `python -m web.app`
+- opens `http://127.0.0.1:5050` unless `SURF_NO_OPEN=1` is set
+- detects an already-running local server through `/health`
+
+Validation commands:
+
+```bash
+zsh -n start_web_demo.command
+SURF_NO_OPEN=1 ./start_web_demo.command
+```
+
+Validation results:
+
+- `zsh -n start_web_demo.command` passed.
+- `SURF_NO_OPEN=1 ./start_web_demo.command` passed against the already-running
+  local server and skipped browser opening as intended.
+- `GET /health` returned HTTP 200 after launcher validation.
+- Python `py_compile` and import checks still pass.
+- `git diff --check` passes.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure.

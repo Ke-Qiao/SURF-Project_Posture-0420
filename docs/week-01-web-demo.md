@@ -8,6 +8,17 @@ same frame-processing path used by the CLI.
 
 ## Run command
 
+For the easiest local demo, double-click:
+
+```text
+/Users/ke-qiao/Desktop/surf/posture-detection/start_web_demo.command
+```
+
+The launcher starts the Flask server and opens the browser at
+`http://127.0.0.1:5050`. Keep the terminal window open while presenting.
+
+Manual command:
+
 ```bash
 cd /Users/ke-qiao/Desktop/surf/posture-detection
 .venv/bin/python -m web.app
@@ -23,6 +34,7 @@ To use another port:
 
 ```bash
 SURF_WEB_PORT=5051 .venv/bin/python -m web.app
+SURF_WEB_PORT=5051 ./start_web_demo.command
 ```
 
 ## Demo modes
