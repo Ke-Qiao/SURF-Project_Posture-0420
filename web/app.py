@@ -15,6 +15,7 @@ from flask import Flask, Response, jsonify, request, send_from_directory
 
 from posture.detector import PoseDetector
 from posture.pipeline import annotate_frame, result_to_dict
+from posture.visualizer import append_analysis_footer
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_ROOT = Path(tempfile.gettempdir()) / "surf-posture-web"
@@ -22,6 +23,7 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
+APP_VERSION = "preview-footer-v1"
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
@@ -42,6 +44,7 @@ def health():
         {
             "app": "surf-posture-web",
             "status": "ok",
+            "version": APP_VERSION,
             "opencv": cv2.__version__,
             "pid": os.getpid(),
             "upload_root": str(UPLOAD_ROOT),
@@ -68,7 +71,8 @@ def analyze_image():
     detector = None
     try:
         detector = PoseDetector(static_image_mode=True)
-        result = annotate_frame(detector, frame)
+        result = annotate_frame(detector, frame, show_text=False)
+        frame = append_analysis_footer(frame, result)
         jpeg = _encode_jpeg(frame)
         encoded = base64.b64encode(jpeg).decode("ascii")
         return jsonify(
@@ -155,7 +159,8 @@ def _frame_stream(source, label: str):
             ok, frame = cap.read()
             if not ok:
                 break
-            annotate_frame(detector, frame)
+            result = annotate_frame(detector, frame, show_text=False)
+            frame = append_analysis_footer(frame, result)
             yield _multipart_frame(frame)
             time.sleep(delay)
     except Exception:

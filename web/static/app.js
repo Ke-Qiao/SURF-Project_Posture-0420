@@ -14,12 +14,16 @@ const labels = {
 const statusBadge = document.querySelector("#statusBadge");
 const modeLabel = document.querySelector("#modeLabel");
 const preview = document.querySelector("#previewImage");
+const previewVideo = document.querySelector("#previewVideo");
 const emptyState = document.querySelector("#emptyState");
 const postureValue = document.querySelector("#postureValue");
 const scoreValue = document.querySelector("#scoreValue");
 const sideValue = document.querySelector("#sideValue");
 const angleList = document.querySelector("#angleList");
 const adviceList = document.querySelector("#adviceList");
+const imageInput = document.querySelector("#imageInput");
+const videoInput = document.querySelector("#videoInput");
+let selectedMediaUrl = "";
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -29,6 +33,8 @@ document.querySelector("#startWebcam").addEventListener("click", startWebcam);
 document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
+imageInput.addEventListener("change", previewSelectedImage);
+videoInput.addEventListener("change", previewSelectedVideo);
 
 function setMode(mode) {
   modeButtons.forEach((button) => {
@@ -43,21 +49,24 @@ function setMode(mode) {
 }
 
 function startWebcam() {
-  showStream(`/stream/webcam?ts=${Date.now()}`);
+  showImage(`/stream/webcam?ts=${Date.now()}`);
   setStatus("Camera", "good");
   resetMetrics("Live overlay");
 }
 
 function stopPreview() {
+  clearSelectedMediaUrl();
   preview.removeAttribute("src");
+  previewVideo.removeAttribute("src");
+  previewVideo.pause();
   preview.classList.remove("active");
+  previewVideo.classList.remove("active");
   emptyState.style.display = "block";
   setStatus("Ready");
 }
 
 async function analyzeImage() {
-  const input = document.querySelector("#imageInput");
-  const file = input.files[0];
+  const file = imageInput.files[0];
   if (!file) {
     setStatus("Choose image", "bad");
     return;
@@ -76,9 +85,8 @@ async function analyzeImage() {
     if (!response.ok) {
       throw new Error(payload.error || "Image analysis failed.");
     }
-    preview.src = payload.image;
-    preview.classList.add("active");
-    emptyState.style.display = "none";
+    clearSelectedMediaUrl();
+    showImage(payload.image);
     renderMetrics(payload.result);
     setStatus(payload.result.detected ? "Done" : "No detection", payload.result.detected ? "good" : "bad");
   } catch (error) {
@@ -89,8 +97,7 @@ async function analyzeImage() {
 }
 
 async function analyzeVideo() {
-  const input = document.querySelector("#videoInput");
-  const file = input.files[0];
+  const file = videoInput.files[0];
   if (!file) {
     setStatus("Choose video", "bad");
     return;
@@ -109,7 +116,8 @@ async function analyzeVideo() {
     if (!response.ok) {
       throw new Error(payload.error || "Video analysis failed.");
     }
-    showStream(`${payload.stream_url}?ts=${Date.now()}`);
+    clearSelectedMediaUrl();
+    showImage(`${payload.stream_url}?ts=${Date.now()}`);
     resetMetrics("Video overlay");
     setStatus("Video", "good");
   } catch (error) {
@@ -119,10 +127,52 @@ async function analyzeVideo() {
   }
 }
 
-function showStream(url) {
+function previewSelectedImage() {
+  const file = imageInput.files[0];
+  if (!file) {
+    return;
+  }
+  clearSelectedMediaUrl();
+  selectedMediaUrl = URL.createObjectURL(file);
+  showImage(selectedMediaUrl);
+  resetMetrics("Image selected");
+  setStatus("Selected", "good");
+}
+
+function previewSelectedVideo() {
+  const file = videoInput.files[0];
+  if (!file) {
+    return;
+  }
+  clearSelectedMediaUrl();
+  selectedMediaUrl = URL.createObjectURL(file);
+  showVideo(selectedMediaUrl);
+  resetMetrics("Video selected");
+  setStatus("Selected", "good");
+}
+
+function showImage(url) {
   preview.src = url;
   preview.classList.add("active");
+  previewVideo.pause();
+  previewVideo.removeAttribute("src");
+  previewVideo.classList.remove("active");
   emptyState.style.display = "none";
+}
+
+function showVideo(url) {
+  preview.removeAttribute("src");
+  preview.classList.remove("active");
+  previewVideo.src = url;
+  previewVideo.classList.add("active");
+  emptyState.style.display = "none";
+}
+
+function clearSelectedMediaUrl() {
+  if (selectedMediaUrl) {
+    URL.revokeObjectURL(selectedMediaUrl);
+    selectedMediaUrl = "";
+  }
 }
 
 function setStatus(text, kind = "") {

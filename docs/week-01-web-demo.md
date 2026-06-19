@@ -46,6 +46,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   structured angle metrics.
 - Video: uploads one local video, stores it temporarily outside the repo, and
   streams annotated frames as MJPEG.
+- Image and video files are previewed immediately after selection. Analysis is
+  only started when the corresponding Analyze button is pressed.
 
 ## Overlay contract
 
@@ -56,7 +58,8 @@ The webpage keeps the same core overlay as `main.py`:
 - Side-view alignment line connecting the five keypoints.
 - A dashed ankle-based plumb line used as a neutral standing reference.
 - Overall posture label, score, selected side, angle values, deviations, and
-  advice.
+  advice are moved into a footer below the visual frame instead of being drawn
+  over the person/image.
 
 ## Current limits
 

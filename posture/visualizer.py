@@ -7,6 +7,7 @@ free of any display concerns.
 from __future__ import annotations
 
 import cv2
+import numpy as np
 
 from posture.analyzer import PostureResult
 from posture.config import (
@@ -47,7 +48,7 @@ def _draw_dashed_vertical_line(frame, x: int, y1: int, y2: int, color) -> None:
         cur = end + gap
 
 
-def draw_analysis(frame, result: PostureResult) -> None:
+def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
     """Render the full posture-analysis overlay onto *frame* (BGR, in-place).
 
     Layout
@@ -61,15 +62,16 @@ def draw_analysis(frame, result: PostureResult) -> None:
 
     # -- no detection ------------------------------------------------
     if not result.detected:
-        cv2.putText(
-            frame,
-            "No person detected",
-            (30, 40),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.9,
-            COLOR_WHITE,
-            2,
-        )
+        if show_text:
+            cv2.putText(
+                frame,
+                "No person detected",
+                (30, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                COLOR_WHITE,
+                2,
+            )
         return
 
     # -- keypoints & alignment line -----------------------------------
@@ -81,15 +83,16 @@ def draw_analysis(frame, result: PostureResult) -> None:
         top_y = max(0, min(y for _, y in px_pts) - 35)
         bottom_y = min(h - 1, max(y for _, y in px_pts) + 35)
         _draw_dashed_vertical_line(frame, ankle_x, top_y, bottom_y, COLOR_REFERENCE)
-        cv2.putText(
-            frame,
-            "plumb line",
-            (max(5, ankle_x + 8), max(18, top_y + 14)),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.38,
-            COLOR_REFERENCE,
-            1,
-        )
+        if show_text:
+            cv2.putText(
+                frame,
+                "plumb line",
+                (max(5, ankle_x + 8), max(18, top_y + 14)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.38,
+                COLOR_REFERENCE,
+                1,
+            )
 
         # alignment line (ear → ankle)
         for i in range(len(px_pts) - 1):
@@ -99,6 +102,9 @@ def draw_analysis(frame, result: PostureResult) -> None:
         for pt in px_pts:
             cv2.circle(frame, pt, 6, COLOR_KEYPOINT, -1)
             cv2.circle(frame, pt, 7, COLOR_WHITE, 1)
+
+    if not show_text:
+        return
 
     # -- top-left: verdict + score ------------------------------------
     verdict = "Good Posture" if result.overall_good else "Bad Posture"
@@ -163,3 +169,94 @@ def draw_analysis(frame, result: PostureResult) -> None:
                 cv2.FONT_HERSHEY_SIMPLEX, 0.42, COLOR_WARNING, 1,
             )
             y_adv += 22
+
+
+def append_analysis_footer(frame, result: PostureResult):
+    """Return a copy of *frame* with posture text moved into a bottom footer."""
+    _, w = frame.shape[:2]
+    footer_h = 142 if result.detected else 72
+    footer = np.full((footer_h, w, 3), (245, 247, 246), dtype=np.uint8)
+
+    text = (29, 42, 37)
+    muted = (107, 115, 111)
+    good = COLOR_GOOD
+    bad = COLOR_BAD
+    warn = COLOR_WARNING
+
+    if not result.detected:
+        _put_footer_text(footer, "No person detected", (18, 30), bad, 0.58, 2)
+        _put_footer_text(
+            footer,
+            "Use a clear side view and keep the body landmarks visible.",
+            (18, 58),
+            muted,
+            0.46,
+            1,
+        )
+        return np.vstack([frame, footer])
+
+    verdict = "Good Posture" if result.overall_good else "Bad Posture"
+    verdict_color = good if result.overall_good else bad
+    _put_footer_text(footer, verdict, (18, 32), verdict_color, 0.62, 2)
+    _put_footer_text(
+        footer,
+        f"Score {result.score}/100  |  Side {result.side}",
+        (18, 60),
+        text,
+        0.48,
+        1,
+    )
+
+    x = 18
+    y = 91
+    for angle in result.angles:
+        color = good if angle.is_good else warn
+        label = _SHORT_LABELS.get(angle.name, angle.label)
+        chunk = f"{label}: {angle.angle} deg, dev {angle.deviation} deg"
+        _put_footer_text(footer, chunk, (x, y), color, 0.42, 1)
+        x += max(210, int(w / 3.2))
+        if x > w - 220:
+            break
+
+    if result.advice:
+        advice = " | ".join(result.advice[:2])
+        _put_footer_text(
+            footer,
+            _fit_text(advice, w, 0.38, 28),
+            (18, footer_h - 12),
+            muted,
+            0.38,
+            1,
+        )
+
+    return np.vstack([frame, footer])
+
+
+def _put_footer_text(canvas, text: str, origin, color, scale: float, thickness: int):
+    cv2.putText(
+        canvas,
+        text,
+        origin,
+        cv2.FONT_HERSHEY_SIMPLEX,
+        scale,
+        color,
+        thickness,
+        cv2.LINE_AA,
+    )
+
+
+def _fit_text(text: str, max_width: int, scale: float, margin: int) -> str:
+    """Trim OpenCV text so it fits the footer width."""
+    available = max_width - margin * 2
+    if cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)[0][0] <= available:
+        return text
+
+    ellipsis = "..."
+    trimmed = text
+    while trimmed:
+        candidate = trimmed.rstrip() + ellipsis
+        width = cv2.getTextSize(candidate, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)[0][0]
+        if width <= available:
+            return candidate
+        trimmed = trimmed[:-1]
+    return ellipsis

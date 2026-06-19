@@ -233,14 +233,16 @@ input {
   background: #151817;
 }
 
-.frame img {
+.frame img,
+.frame video {
   display: none;
   width: 100%;
   height: 100%;
   object-fit: contain;
 }
 
-.frame img.active {
+.frame img.active,
+.frame video.active {
   display: block;
 }
 

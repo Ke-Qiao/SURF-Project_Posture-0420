@@ -11,14 +11,18 @@ from posture.detector import PoseDetector
 from posture.visualizer import draw_analysis
 
 
-def annotate_frame(detector: PoseDetector, frame) -> PostureResult:
+def annotate_frame(
+    detector: PoseDetector,
+    frame,
+    show_text: bool = True,
+) -> PostureResult:
     """Run detection and draw the existing skeleton/analysis overlay in-place."""
     rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = detector.process(rgb)
 
     detector.draw_skeleton(frame, results)
     posture = analyze_posture(detector.get_landmarks(results))
-    draw_analysis(frame, posture)
+    draw_analysis(frame, posture, show_text=show_text)
     return posture
 
 

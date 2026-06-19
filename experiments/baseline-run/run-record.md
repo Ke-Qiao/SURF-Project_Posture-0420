@@ -300,3 +300,47 @@ Validation results:
 - Browser DOM validation confirmed no horizontal overflow and a shorter topbar.
 - In this Codex sandbox, image analysis still returns the known MediaPipe/OpenGL
   HTTP 503, but the UI-facing error is now short and stable.
+
+## Web demo media preview and text footer update
+
+Follow-up changes were made after reviewing the webpage layout:
+
+- Removed posture verdict, score, angle, side, and advice text from the visual
+  area for web image, webcam, and video outputs.
+- Kept the skeleton, side-view keypoint line, keypoint dots, and plumb line on
+  the visual area.
+- Added `append_analysis_footer` so analysis text is appended below the frame.
+- Added a `<video>` preview element for selected video files.
+- Added image/video `change` handlers so selected files are previewed before
+  analysis starts.
+- Added a web app health version marker: `preview-footer-v1`.
+- Updated the one-click launcher so older local servers with no matching health
+  version are treated as occupied, and the next available port is selected.
+
+Validation results:
+
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, and `web/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- With an older server already running on `5050`, the launcher correctly
+  selected `http://127.0.0.1:5051`.
+- `GET /health` on the updated server returned HTTP 200 with
+  `"version":"preview-footer-v1"`.
+- HTML/JS validation confirmed `previewVideo`, `previewSelectedImage`,
+  `previewSelectedVideo`, `showVideo`, and `URL.createObjectURL` are present.
+- Browser DOM validation confirmed no horizontal overflow and no subtitle text.
+- Direct `append_analysis_footer` validation confirmed a detected result adds a
+  142px footer below the frame.
+- The currently running older `5050` service can still analyze the sample image,
+  but because it was started before this change, its in-memory backend does not
+  include the footer logic. Relaunch with `start_web_demo.command` to load the
+  new backend.
+- The temporary updated `5051` service started from this agent session still
+  returns the known Codex MediaPipe/OpenGL HTTP 503 for live analysis.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure in this agent session.
