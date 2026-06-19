@@ -84,7 +84,7 @@ async function analyzeImage() {
   } catch (error) {
     stopPreview();
     setStatus("Error", "bad");
-    resetMetrics(error.message);
+    showError(error.message);
   }
 }
 
@@ -115,7 +115,7 @@ async function analyzeVideo() {
   } catch (error) {
     stopPreview();
     setStatus("Error", "bad");
-    resetMetrics(error.message);
+    showError(error.message);
   }
 }
 
@@ -132,6 +132,7 @@ function setStatus(text, kind = "") {
 }
 
 function resetMetrics(message = "") {
+  postureValue.classList.remove("error-text");
   postureValue.textContent = message || "-";
   scoreValue.textContent = "-";
   sideValue.textContent = "-";
@@ -139,7 +140,22 @@ function resetMetrics(message = "") {
   adviceList.innerHTML = "";
 }
 
+function showError(message) {
+  postureValue.textContent = "Error";
+  postureValue.classList.add("error-text");
+  scoreValue.textContent = "-";
+  sideValue.textContent = "-";
+  angleList.innerHTML = "";
+  adviceList.innerHTML = "";
+
+  const item = document.createElement("div");
+  item.className = "advice-item error-item";
+  item.textContent = message;
+  adviceList.appendChild(item);
+}
+
 function renderMetrics(result) {
+  postureValue.classList.remove("error-text");
   postureValue.textContent = result.posture || "-";
   scoreValue.textContent = result.detected ? `${result.score}/100` : "-";
   sideValue.textContent = result.side || "-";

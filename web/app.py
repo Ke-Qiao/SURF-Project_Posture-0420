@@ -40,8 +40,10 @@ def health():
     """Lightweight server health check that does not initialize MediaPipe."""
     return jsonify(
         {
+            "app": "surf-posture-web",
             "status": "ok",
             "opencv": cv2.__version__,
+            "pid": os.getpid(),
             "upload_root": str(UPLOAD_ROOT),
         }
     )
@@ -76,7 +78,7 @@ def analyze_image():
             }
         )
     except Exception as exc:  # MediaPipe/OpenGL failures should not crash demo.
-        return _json_error(_runtime_error_message(exc), 503)
+        return _json_error(_runtime_error_message(), 503, detail=str(exc))
     finally:
         if detector is not None:
             detector.close()
@@ -156,8 +158,8 @@ def _frame_stream(source, label: str):
             annotate_frame(detector, frame)
             yield _multipart_frame(frame)
             time.sleep(delay)
-    except Exception as exc:
-        yield _multipart_frame(_error_frame(_runtime_error_message(exc)))
+    except Exception:
+        yield _multipart_frame(_error_frame(_runtime_error_message()))
     finally:
         if cap is not None:
             cap.release()
@@ -224,21 +226,30 @@ def _wrap_text(text: str, max_chars: int) -> list[str]:
     return lines[:10]
 
 
-def _json_error(message: str, status: int):
-    return jsonify({"error": message}), status
+def _json_error(message: str, status: int, detail: str | None = None):
+    payload = {"error": message}
+    if detail:
+        payload["detail"] = detail
+    return jsonify(payload), status
 
 
-def _runtime_error_message(exc: Exception) -> str:
+def _runtime_error_message() -> str:
     return (
-        "Posture detector could not run in this environment. "
-        "Use a normal macOS GUI terminal with Camera permission if this is "
-        f"a MediaPipe/OpenGL sandbox issue. Detail: {exc}"
+        "MediaPipe/OpenGL could not start in this server session. "
+        "Close old demo server windows and relaunch with start_web_demo.command "
+        "from a normal macOS Terminal."
     )
 
 
 def main() -> None:
     port = int(os.environ.get("SURF_WEB_PORT", "5050"))
-    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
+    app.run(
+        host="127.0.0.1",
+        port=port,
+        debug=False,
+        threaded=False,
+        use_reloader=False,
+    )
 
 
 if __name__ == "__main__":

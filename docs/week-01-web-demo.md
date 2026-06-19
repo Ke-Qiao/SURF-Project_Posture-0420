@@ -16,6 +16,8 @@ For the easiest local demo, double-click:
 
 The launcher starts the Flask server and opens the browser at
 `http://127.0.0.1:5050`. Keep the terminal window open while presenting.
+If port `5050` is already occupied by an older local server, the launcher will
+use the next available port and print the actual URL.
 
 Manual command:
 
@@ -62,6 +64,7 @@ The webpage keeps the same core overlay as `main.py`:
   starts the server.
 - In the current Codex sandbox, MediaPipe Pose may fail during graph
   initialization because the sandbox cannot create the required macOS OpenGL
-  context. The web server handles this as a visible error instead of crashing.
+  context. The web server handles this as a short visible error instead of
+  crashing or showing the full low-level stack in the UI.
 - Video metrics are drawn on the stream frames. The right-side structured panel
   is currently populated for image mode only.

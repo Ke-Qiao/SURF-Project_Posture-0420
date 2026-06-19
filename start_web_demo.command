@@ -32,6 +32,46 @@ open_demo_url() {
   fi
 }
 
+health_body() {
+  /usr/bin/curl -fsS "$1/health" 2>/dev/null || true
+}
+
+is_current_demo_server() {
+  [[ "$1" == *'"app":"surf-posture-web"'* ]]
+}
+
+pick_available_url() {
+  local start_port="$PORT"
+  local candidate_port="$start_port"
+  local candidate_url
+  local body
+
+  while (( candidate_port < start_port + 10 )); do
+    candidate_url="http://127.0.0.1:${candidate_port}"
+    body="$(health_body "$candidate_url")"
+
+    if [[ -z "$body" ]]; then
+      PORT="$candidate_port"
+      URL="$candidate_url"
+      return 0
+    fi
+
+    if is_current_demo_server "$body"; then
+      PORT="$candidate_port"
+      URL="$candidate_url"
+      echo "Web demo is already running."
+      open_demo_url
+      exit 0
+    fi
+
+    echo "Port ${candidate_port} is occupied by another or older local server."
+    candidate_port=$((candidate_port + 1))
+  done
+
+  echo "Could not find an available port from ${start_port} to $((start_port + 9))."
+  exit 1
+}
+
 trap pause_on_error ERR
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -59,13 +99,10 @@ then
   exit 1
 fi
 
-if /usr/bin/curl -fsS "$URL/health" >/dev/null 2>&1; then
-  echo "Web demo is already running."
-  open_demo_url
-  exit 0
-fi
+pick_available_url
 
 echo "Starting server..."
+echo "URL: $URL"
 echo "Leave this window open while presenting."
 echo "Press Ctrl+C to stop the demo."
 echo
@@ -74,4 +111,4 @@ if [[ "${SURF_NO_OPEN:-0}" != "1" ]]; then
   (sleep 2; /usr/bin/open "$URL" >/dev/null 2>&1 || true) &
 fi
 
-exec "$PYTHON_BIN" -m web.app
+exec env SURF_WEB_PORT="$PORT" "$PYTHON_BIN" -m web.app

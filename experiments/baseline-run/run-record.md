@@ -264,3 +264,39 @@ Validation results:
   this platform` warning.
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure.
+
+## Web demo UI cleanup and MediaPipe error handling
+
+Follow-up changes were made after visual inspection of the local web page:
+
+- Removed the top subtitle `Week 1 side-view posture baseline`.
+- Changed Flask to run the local demo in single-thread mode so MediaPipe Pose is
+  initialized and used from the server's main request loop instead of worker
+  threads.
+- Added a stable `app` marker and PID to `/health`.
+- Updated `start_web_demo.command` so if port `5050` is occupied by an older
+  local server, it automatically tries the next available port.
+- Shortened the user-facing MediaPipe/OpenGL error message.
+- Kept the low-level MediaPipe exception in the JSON `detail` field for
+  debugging.
+- Changed the frontend so errors show as `Posture: Error` plus a short advice
+  message instead of placing the full exception inside the large `Posture`
+  value.
+
+Validation results:
+
+- `zsh -n start_web_demo.command` passed.
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, and `web/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `git diff --check` passed.
+- With the older server still occupying port `5050`, the launcher correctly
+  selected `http://127.0.0.1:5051`.
+- After stopping the older server, the updated launcher started the new server
+  on `http://127.0.0.1:5050`.
+- `GET /health` returned HTTP 200 with `"app":"surf-posture-web"`.
+- HTML validation confirmed the removed subtitle no longer appears.
+- Browser DOM validation confirmed no horizontal overflow and a shorter topbar.
+- In this Codex sandbox, image analysis still returns the known MediaPipe/OpenGL
+  HTTP 503, but the UI-facing error is now short and stable.

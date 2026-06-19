@@ -47,12 +47,6 @@ input {
   letter-spacing: 0;
 }
 
-.topbar p {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: 14px;
-}
-
 .status-badge {
   min-width: 96px;
   padding: 7px 10px;
@@ -275,6 +269,13 @@ input {
 
 .metric-row strong {
   font-size: 18px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.metric-row strong.error-text {
+  color: var(--bad);
+  font-size: 16px;
 }
 
 .angle-list,
