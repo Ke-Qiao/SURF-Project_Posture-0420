@@ -28,6 +28,20 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 .venv/bin/python scripts/filter_dataset.py --input "/Users/ke-qiao/Desktop/surf/Provided elemnets/archive/images/train" --output data/filtered --resume
 ```
 
+## Suggested meeting flow
+
+1. Start with `teacher_baseline.py` to show the original webcam reference logic
+   is preserved.
+2. Open the local webpage with `start_web_demo.command`.
+3. Show image mode first because it is the most stable path for explaining
+   side-view keypoints, angles, score, and advice.
+4. Show webcam mode next if Camera permission is available in the normal macOS
+   Terminal session.
+5. Show video mode last to demonstrate that the same frame-processing pipeline
+   can run on recorded input.
+6. Use `Download evidence` after a clear result to save the current mode,
+   frame, score, angles, and advice as a JSON record.
+
 ## How to explain the increment
 
 - The teacher baseline checks shoulder imbalance and torso slant from webcam
@@ -40,6 +54,11 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
   evidence.
 - The webpage adds a local browser demo for webcam, image, and video inputs,
   while keeping the same skeleton, side-view keypoints, and rule-based logic.
+- Front-facing input is intentionally blocked from side-view scoring and shown
+  as `Side view required`, because the Forward Head angle is a side-view
+  measurement.
+- This week does not include model training. The next reasonable step is
+  filtering usable side-view images and tuning thresholds with more examples.
 - Dataset filtering comes before model training because many source images are
   sitting, front-facing, partial-body, or unsuitable for standing side-view
   posture detection.
@@ -58,3 +77,10 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 
 The lightweight local webpage is implemented in `web/`. It calls the existing
 analysis path instead of redesigning posture detection logic.
+
+Current webpage polish:
+
+- Webcam and video modes both use JSON frame streams, so the preview, footer,
+  and right-side metrics update from the same `PostureResult`.
+- Image mode still previews the selected file immediately before analysis.
+- The evidence export is local-only and does not write personal media to Git.

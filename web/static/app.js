@@ -27,8 +27,13 @@ const footerAngles = document.querySelector("#footerAngles");
 const footerAdvice = document.querySelector("#footerAdvice");
 const imageInput = document.querySelector("#imageInput");
 const videoInput = document.querySelector("#videoInput");
+const downloadEvidence = document.querySelector("#downloadEvidence");
 let selectedMediaUrl = "";
 let activeStreamController = null;
+let activeMode = "webcam";
+let latestResult = null;
+let latestFrameDataUrl = "";
+let latestSourceName = "";
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -38,10 +43,12 @@ document.querySelector("#startWebcam").addEventListener("click", startWebcam);
 document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
+downloadEvidence.addEventListener("click", downloadCurrentEvidence);
 imageInput.addEventListener("change", previewSelectedImage);
 videoInput.addEventListener("change", previewSelectedVideo);
 
 function setMode(mode) {
+  activeMode = mode;
   modeButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.mode === mode);
   });
@@ -56,15 +63,18 @@ function setMode(mode) {
 function startWebcam() {
   stopActiveStream();
   clearSelectedMediaUrl();
+  latestSourceName = "webcam";
   resetMetrics("Starting camera");
   setStatus("Camera", "good");
   activeStreamController = new AbortController();
-  readWebcamStream(activeStreamController.signal);
+  readFrameStream(`/stream/webcam-json?ts=${Date.now()}`, activeStreamController.signal, "Camera");
 }
 
 function stopPreview() {
   stopActiveStream();
   clearSelectedMediaUrl();
+  latestFrameDataUrl = "";
+  refreshEvidenceButton();
   preview.removeAttribute("src");
   previewVideo.removeAttribute("src");
   previewVideo.pause();
@@ -74,11 +84,11 @@ function stopPreview() {
   setStatus("Ready");
 }
 
-async function readWebcamStream(signal) {
+async function readFrameStream(url, signal, statusLabel) {
   try {
-    const response = await fetch(`/stream/webcam-json?ts=${Date.now()}`, { signal });
+    const response = await fetch(url, { signal });
     if (!response.ok || !response.body) {
-      throw new Error("Webcam stream could not start.");
+      throw new Error(`${statusLabel} stream could not start.`);
     }
 
     const reader = response.body.getReader();
@@ -104,7 +114,7 @@ async function readWebcamStream(signal) {
         }
         showImage(payload.image);
         renderMetrics(payload.result);
-        setStatus(payload.result.detected ? "Camera" : "No detection", payload.result.detected ? "good" : "bad");
+        setStatus(payload.result.detected ? statusLabel : "No detection", payload.result.detected ? "good" : "bad");
       }
     }
   } catch (error) {
@@ -127,6 +137,7 @@ async function analyzeImage() {
   const form = new FormData();
   form.append("file", file);
   setStatus("Analyzing");
+  latestSourceName = file.name;
 
   try {
     const response = await fetch("/api/analyze-image", {
@@ -158,6 +169,7 @@ async function analyzeVideo() {
   const form = new FormData();
   form.append("file", file);
   setStatus("Loading");
+  latestSourceName = file.name;
 
   try {
     const response = await fetch("/api/load-video", {
@@ -169,9 +181,11 @@ async function analyzeVideo() {
       throw new Error(payload.error || "Video analysis failed.");
     }
     clearSelectedMediaUrl();
-    showImage(`${payload.stream_url}?ts=${Date.now()}`);
     resetMetrics("Video overlay");
     setStatus("Video", "good");
+    activeStreamController = new AbortController();
+    const streamUrl = payload.json_stream_url || payload.stream_url.replace("/stream/video/", "/stream/video-json/");
+    readFrameStream(`${streamUrl}?ts=${Date.now()}`, activeStreamController.signal, "Video");
   } catch (error) {
     stopPreview();
     setStatus("Error", "bad");
@@ -186,6 +200,7 @@ function previewSelectedImage() {
   }
   clearSelectedMediaUrl();
   selectedMediaUrl = URL.createObjectURL(file);
+  latestSourceName = file.name;
   showImage(selectedMediaUrl);
   resetMetrics("Image selected");
   setStatus("Selected", "good");
@@ -198,6 +213,7 @@ function previewSelectedVideo() {
   }
   clearSelectedMediaUrl();
   selectedMediaUrl = URL.createObjectURL(file);
+  latestSourceName = file.name;
   showVideo(selectedMediaUrl);
   resetMetrics("Video selected");
   setStatus("Selected", "good");
@@ -205,6 +221,10 @@ function previewSelectedVideo() {
 
 function showImage(url) {
   preview.src = url;
+  if (url.startsWith("data:image/")) {
+    latestFrameDataUrl = url;
+    refreshEvidenceButton();
+  }
   preview.classList.add("active");
   previewVideo.pause();
   previewVideo.removeAttribute("src");
@@ -213,6 +233,8 @@ function showImage(url) {
 }
 
 function showVideo(url) {
+  latestFrameDataUrl = "";
+  refreshEvidenceButton();
   preview.removeAttribute("src");
   preview.classList.remove("active");
   previewVideo.src = url;
@@ -234,6 +256,9 @@ function setStatus(text, kind = "") {
 }
 
 function resetMetrics(message = "") {
+  latestResult = null;
+  latestFrameDataUrl = "";
+  refreshEvidenceButton();
   postureValue.classList.remove("error-text");
   postureValue.textContent = message || "-";
   scoreValue.textContent = "-";
@@ -248,6 +273,8 @@ function resetMetrics(message = "") {
 }
 
 function showError(message) {
+  latestResult = null;
+  refreshEvidenceButton();
   postureValue.textContent = "Error";
   postureValue.classList.add("error-text");
   scoreValue.textContent = "-";
@@ -269,6 +296,8 @@ function showError(message) {
 function renderMetrics(result) {
   const advice = result.advice || [];
   const angles = result.angles || [];
+  latestResult = result;
+  refreshEvidenceButton();
 
   postureValue.classList.remove("error-text");
   postureValue.textContent = result.posture || "-";
@@ -340,4 +369,36 @@ function stopActiveStream() {
     activeStreamController.abort();
     activeStreamController = null;
   }
+}
+
+function refreshEvidenceButton() {
+  downloadEvidence.disabled = !(latestResult && latestFrameDataUrl);
+}
+
+function downloadCurrentEvidence() {
+  if (!latestResult || !latestFrameDataUrl) {
+    setStatus("No evidence", "bad");
+    return;
+  }
+
+  const evidence = {
+    app: "surf-posture-demo",
+    exported_at: new Date().toISOString(),
+    mode: activeMode,
+    source: latestSourceName || activeMode,
+    result: latestResult,
+    preview_image: latestFrameDataUrl,
+  };
+  const text = JSON.stringify(evidence, null, 2);
+  const blob = new Blob([text], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  const stamp = evidence.exported_at.replace(/[:.]/g, "-");
+  link.href = url;
+  link.download = `surf-posture-evidence-${activeMode}-${stamp}.json`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+  setStatus("Evidence saved", "good");
 }

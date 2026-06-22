@@ -432,3 +432,37 @@ Validation results:
   this platform` warning.
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure in this agent session.
+
+## Week 1 demo polish for meeting
+
+Follow-up changes were made before the Week 1 meeting demo:
+
+- Added `GET /stream/video-json/<token>` so uploaded videos can use the same
+  frame-plus-result JSON stream pattern as webcam mode.
+- Updated video mode to refresh the preview, footer, and right-side metrics from
+  the current frame result.
+- Added a local `Download evidence` button that exports the current mode, source
+  name, timestamp, posture result, angles, advice, and current preview frame as
+  JSON.
+- Kept the teacher baseline, CLI flags, posture thresholds, side-view gate, and
+  original provided dataset unchanged.
+- Updated the web app health version marker to `week-01-demo-polish-v1`.
+
+Validation results:
+
+- `python -m unittest discover -s tests` passed 6 tests.
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, `web/*.py`, and `tests/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `node --check web/static/app.js` passed.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- `GET /health` on the updated service returned HTTP 200 with
+  `"version":"week-01-demo-polish-v1"`.
+- Static checks confirmed `index.html`, `app.js`, and `styles.css` are served
+  by the updated service.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure in this agent session.

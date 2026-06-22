@@ -45,11 +45,15 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
 - Image: uploads one image, analyzes it, and returns an annotated JPEG plus
   structured angle metrics.
 - Video: uploads one local video, stores it temporarily outside the repo, and
-  streams annotated frames as MJPEG.
+  streams annotated frames with JSON posture metadata.
 - Image and video files are previewed immediately after selection. Analysis is
   only started when the corresponding Analyze button is pressed.
 - Webcam mode uses a local JSON frame stream so the preview image and live
   posture footer update together.
+- Video mode uses the same JSON frame stream pattern, so the preview image,
+  footer, and right-side metrics update together while the video is processed.
+- Download evidence exports the current mode, source name, timestamp, posture
+  result, angle values, advice, and current preview frame as a local JSON file.
 - Front-facing or otherwise non-side-view inputs are detected as unsupported
   for the current scoring rule. The page shows `Side view required` instead of
   computing a misleading Forward Head score.
@@ -67,6 +71,8 @@ The webpage keeps the same core overlay as `main.py`:
   over the person/image.
 - Webcam live results are rendered in this same browser footer and the
   right-side metrics panel.
+- Video live results are rendered in the same footer and right-side metrics
+  panel, using the current frame result rather than a whole-video summary.
 
 ## Current limits
 
@@ -76,8 +82,8 @@ The webpage keeps the same core overlay as `main.py`:
   initialization because the sandbox cannot create the required macOS OpenGL
   context. The web server handles this as a short visible error instead of
   crashing or showing the full low-level stack in the UI.
-- Video metrics are drawn on the stream frames. The right-side structured panel
-  is currently populated for image mode only.
+- Video metrics are frame-by-frame only; the demo does not compute a whole-video
+  aggregate score.
 - The current posture score is intentionally side-view-only. Front-view
   analysis is a future model/rule design task, not part of this Week 1
   baseline.

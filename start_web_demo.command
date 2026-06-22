@@ -37,7 +37,7 @@ health_body() {
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"side-view-gate-v1"'* ]]
+  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-01-demo-polish-v1"'* ]]
 }
 
 port_is_open() {

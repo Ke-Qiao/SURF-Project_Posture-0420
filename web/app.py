@@ -24,7 +24,7 @@ UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "side-view-gate-v1"
+APP_VERSION = "week-01-demo-polish-v1"
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
@@ -103,7 +103,13 @@ def load_video():
     token = uuid.uuid4().hex
     path = _save_upload(uploaded, ext, token=token)
     _VIDEO_UPLOADS[token] = path
-    return jsonify({"token": token, "stream_url": f"/stream/video/{token}"})
+    return jsonify(
+        {
+            "token": token,
+            "stream_url": f"/stream/video/{token}",
+            "json_stream_url": f"/stream/video-json/{token}",
+        }
+    )
 
 
 @app.get("/stream/webcam")
@@ -138,6 +144,23 @@ def stream_video(token: str):
     return Response(
         _frame_stream(str(path), label="Video unavailable"),
         mimetype="multipart/x-mixed-replace; boundary=frame",
+    )
+
+
+@app.get("/stream/video-json/<token>")
+def stream_video_json(token: str):
+    """Stream uploaded video frames with JSON posture metadata."""
+    path = _VIDEO_UPLOADS.get(token)
+    if path is None or not path.exists():
+        return Response(
+            _json_line({"error": "Video file not found."}),
+            mimetype="application/x-ndjson",
+            status=404,
+        )
+
+    return Response(
+        _json_frame_stream(str(path), label="Video unavailable"),
+        mimetype="application/x-ndjson",
     )
 
 

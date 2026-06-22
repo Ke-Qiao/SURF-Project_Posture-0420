@@ -153,6 +153,16 @@ input {
   color: var(--text);
 }
 
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.46;
+}
+
+.evidence-button {
+  width: 100%;
+  margin-top: 18px;
+}
+
 .file-picker {
   display: grid;
   place-items: center;
