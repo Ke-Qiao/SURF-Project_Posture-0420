@@ -13,13 +13,14 @@ class WebAppContractTests(unittest.TestCase):
 
     def tearDown(self):
         web_app._VIDEO_UPLOADS.clear()
+        web_app._BATCH_EXPORTS.clear()
 
     def test_health_exposes_week_1_polish_version(self):
         response = self.client.get("/health")
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-01-demo-polish-v1", response.json["version"])
+        self.assertEqual("week-01-batch-v1", response.json["version"])
 
     def test_load_video_returns_json_stream_url(self):
         response = self.client.post(
@@ -50,6 +51,42 @@ class WebAppContractTests(unittest.TestCase):
         self.assertEqual(200, response.status_code)
         self.assertEqual("application/x-ndjson", response.mimetype)
         self.assertEqual(b'{"ok":true}\n', response.data)
+
+    def test_batch_analyze_requires_source_or_files(self):
+        response = self.client.post("/api/batch-analyze", data={})
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("Choose uploaded files", response.json["error"])
+
+    def test_batch_analyze_rejects_unknown_teacher_source(self):
+        response = self.client.post("/api/batch-analyze", data={"teacher_source": "unknown"})
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("Unsupported teacher source", response.json["error"])
+
+    def test_batch_analyze_accepts_uploaded_files(self):
+        payload = {
+            "token": "unit-batch",
+            "summary": {"total": 1, "counts": {"standing": 1, "sitting": 0, "incomplete": 0}},
+            "rows": [],
+            "row_count": 1,
+            "download_url": "/api/batch-download/unit-batch",
+        }
+        with patch.object(web_app, "_create_batch_export", return_value=payload):
+            response = self.client.post(
+                "/api/batch-analyze",
+                data={"files": (io.BytesIO(b"fake image bytes"), "demo.jpg")},
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("/api/batch-download/unit-batch", response.json["download_url"])
+
+    def test_batch_download_missing_token_returns_404(self):
+        response = self.client.get("/api/batch-download/missing")
+
+        self.assertEqual(404, response.status_code)
+        self.assertIn("Batch export not found", response.json["error"])
 
 
 if __name__ == "__main__":

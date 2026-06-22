@@ -3,12 +3,14 @@ const panels = {
   webcam: document.querySelector("#webcamPanel"),
   image: document.querySelector("#imagePanel"),
   video: document.querySelector("#videoPanel"),
+  batch: document.querySelector("#batchPanel"),
 };
 
 const labels = {
   webcam: "Webcam",
   image: "Image",
   video: "Video",
+  batch: "Batch",
 };
 
 const statusBadge = document.querySelector("#statusBadge");
@@ -27,6 +29,10 @@ const footerAngles = document.querySelector("#footerAngles");
 const footerAdvice = document.querySelector("#footerAdvice");
 const imageInput = document.querySelector("#imageInput");
 const videoInput = document.querySelector("#videoInput");
+const batchInput = document.querySelector("#batchInput");
+const teacherSource = document.querySelector("#teacherSource");
+const analyzeBatchButton = document.querySelector("#analyzeBatch");
+const downloadBatch = document.querySelector("#downloadBatch");
 const downloadEvidence = document.querySelector("#downloadEvidence");
 let selectedMediaUrl = "";
 let activeStreamController = null;
@@ -43,6 +49,7 @@ document.querySelector("#startWebcam").addEventListener("click", startWebcam);
 document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
+analyzeBatchButton.addEventListener("click", analyzeBatch);
 downloadEvidence.addEventListener("click", downloadCurrentEvidence);
 imageInput.addEventListener("change", previewSelectedImage);
 videoInput.addEventListener("change", previewSelectedVideo);
@@ -259,6 +266,7 @@ function resetMetrics(message = "") {
   latestResult = null;
   latestFrameDataUrl = "";
   refreshEvidenceButton();
+  resetBatchDownload();
   postureValue.classList.remove("error-text");
   postureValue.textContent = message || "-";
   scoreValue.textContent = "-";
@@ -275,6 +283,7 @@ function resetMetrics(message = "") {
 function showError(message) {
   latestResult = null;
   refreshEvidenceButton();
+  resetBatchDownload();
   postureValue.textContent = "Error";
   postureValue.classList.add("error-text");
   scoreValue.textContent = "-";
@@ -291,6 +300,45 @@ function showError(message) {
   item.className = "advice-item error-item";
   item.textContent = message;
   adviceList.appendChild(item);
+}
+
+async function analyzeBatch() {
+  const files = Array.from(batchInput.files || []);
+  const source = teacherSource.value;
+  if (!source && files.length === 0) {
+    setStatus("Choose batch", "bad");
+    return;
+  }
+
+  stopActiveStream();
+  clearSelectedMediaUrl();
+  preview.removeAttribute("src");
+  previewVideo.removeAttribute("src");
+  preview.classList.remove("active");
+  previewVideo.classList.remove("active");
+  emptyState.style.display = "block";
+  resetMetrics("Processing batch");
+  setStatus("Batch running");
+
+  const form = new FormData();
+  form.append("teacher_source", source);
+  files.forEach((file) => form.append("files", file));
+
+  try {
+    const response = await fetch("/api/batch-analyze", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Batch analysis failed.");
+    }
+    renderBatchSummary(payload);
+    setStatus("Batch done", "good");
+  } catch (error) {
+    setStatus("Error", "bad");
+    showError(error.message);
+  }
 }
 
 function renderMetrics(result) {
@@ -364,11 +412,65 @@ function renderMetrics(result) {
   });
 }
 
+function renderBatchSummary(payload) {
+  const summary = payload.summary || {};
+  const counts = summary.counts || {};
+  const mediaCounts = summary.media_counts || {};
+  const total = summary.total || 0;
+
+  postureValue.classList.remove("error-text");
+  postureValue.textContent = "Batch complete";
+  scoreValue.textContent = `${total} files`;
+  sideValue.textContent = "ZIP ready";
+  angleList.innerHTML = "";
+  adviceList.innerHTML = "";
+  footerAngles.innerHTML = "";
+  footerAdvice.textContent = "Rule-based auto suggestion; review edge cases manually.";
+  footerPosture.textContent = "Batch complete";
+  footerPosture.className = "good";
+  footerMeta.textContent = `Images ${mediaCounts.image || 0} / Videos ${mediaCounts.video || 0}`;
+
+  [
+    ["Standing", counts.standing || 0, "good"],
+    ["Sitting", counts.sitting || 0, ""],
+    ["Incomplete", counts.incomplete || 0, "bad"],
+  ].forEach(([label, value, kind]) => {
+    const item = document.createElement("div");
+    item.className = `angle-item ${kind}`;
+    item.innerHTML = `
+      <div class="angle-title">
+        <span>${label}</span>
+        <span>${value}</span>
+      </div>
+      <div class="angle-detail">Rule-based batch classification</div>
+    `;
+    angleList.appendChild(item);
+
+    const footerItem = document.createElement("span");
+    footerItem.className = `footer-angle ${kind || "good"}`;
+    footerItem.textContent = `${label}: ${value}`;
+    footerAngles.appendChild(footerItem);
+  });
+
+  const note = document.createElement("div");
+  note.className = "advice-item";
+  note.textContent = "Export includes standing/sitting/incomplete folders, annotated samples, CSV, and summary.md.";
+  adviceList.appendChild(note);
+
+  downloadBatch.href = payload.download_url;
+  downloadBatch.hidden = false;
+}
+
 function stopActiveStream() {
   if (activeStreamController) {
     activeStreamController.abort();
     activeStreamController = null;
   }
+}
+
+function resetBatchDownload() {
+  downloadBatch.hidden = true;
+  downloadBatch.removeAttribute("href");
 }
 
 function refreshEvidenceButton() {

@@ -70,7 +70,7 @@ input {
 
 .layout {
   display: grid;
-  grid-template-columns: 290px minmax(420px, 1fr) 300px;
+  grid-template-columns: 310px minmax(420px, 1fr) 300px;
   gap: 18px;
   padding: 18px;
 }
@@ -90,7 +90,7 @@ input {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -98,11 +98,13 @@ input {
 
 .mode-button {
   min-height: 42px;
+  padding: 0 6px;
   border: 0;
   border-right: 1px solid var(--border);
   background: #f9fbfa;
   color: var(--muted);
   cursor: pointer;
+  font-size: 13px;
 }
 
 .mode-button:last-child {
@@ -126,7 +128,8 @@ input {
 
 .primary-button,
 .secondary-button,
-.file-picker {
+.file-picker,
+.select-input {
   min-height: 42px;
   border-radius: 8px;
 }
@@ -156,6 +159,30 @@ input {
 .secondary-button:disabled {
   cursor: not-allowed;
   opacity: 0.46;
+}
+
+.field-label {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.select-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #ffffff;
+  color: var(--text);
+  padding: 0 10px;
+}
+
+.secondary-link {
+  display: grid;
+  min-height: 42px;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--accent);
+  text-decoration: none;
 }
 
 .evidence-button {

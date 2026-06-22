@@ -20,6 +20,7 @@
           <button class="mode-button active" type="button" data-mode="webcam">Webcam</button>
           <button class="mode-button" type="button" data-mode="image">Image</button>
           <button class="mode-button" type="button" data-mode="video">Video</button>
+          <button class="mode-button" type="button" data-mode="batch">Batch</button>
         </div>
 
         <div id="webcamPanel" class="mode-panel active">
@@ -41,6 +42,22 @@
             <input id="videoInput" type="file" accept="video/*">
           </label>
           <button id="playVideo" class="primary-button" type="button">Analyze video</button>
+        </div>
+
+        <div id="batchPanel" class="mode-panel">
+          <label class="field-label" for="teacherSource">Teacher image library</label>
+          <select id="teacherSource" class="select-input">
+            <option value="">Do not include</option>
+            <option value="all">All teacher images</option>
+            <option value="train">Teacher train images</option>
+            <option value="val">Teacher val images</option>
+          </select>
+          <label class="file-picker">
+            <span>Choose images/videos</span>
+            <input id="batchInput" type="file" accept="image/*,video/*" multiple>
+          </label>
+          <button id="analyzeBatch" class="primary-button" type="button">Analyze batch</button>
+          <a id="downloadBatch" class="secondary-link" href="#" hidden>Download batch ZIP</a>
         </div>
 
         <button id="downloadEvidence" class="secondary-button evidence-button" type="button" disabled>Download evidence</button>

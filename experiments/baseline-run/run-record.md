@@ -345,6 +345,42 @@ Validation results:
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure in this agent session.
 
+## Week 1 batch triage export
+
+Follow-up changes were made to support batch media triage from the web demo:
+
+- Added a `Batch` mode to the local webpage.
+- Batch mode accepts uploaded images/videos and can also include the teacher
+  image library from `train`, `val`, or all teacher images.
+- Added rule-based standing/sitting/incomplete auto-suggestions using MediaPipe
+  landmark completeness and lower-body geometry.
+- Added a batch ZIP export containing categorized files, annotated images,
+  `batch_results.csv`, and `summary.md`.
+- Added `GET /api/batch-download/<token>` for downloading completed exports.
+- Updated the web app health version marker to `week-01-batch-v1`.
+- Kept this as dataset triage, not model training or a trained classifier.
+
+Validation results:
+
+- `python -m unittest discover -s tests` passed 14 tests.
+- Python `py_compile` passed for `teacher_baseline.py`, `main.py`,
+  `posture/*.py`, `scripts/*.py`, `web/*.py`, and `tests/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `node --check web/static/app.js` passed.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- The launcher avoided an occupied older service on `5050` and started the
+  updated server on `5051`.
+- `GET /health` returned HTTP 200 with `"version":"week-01-batch-v1"`.
+- Static checks confirmed Batch UI appears in `index.html`, and `app.js` /
+  `styles.css` are served by the updated service.
+- Empty `POST /api/batch-analyze` returned the expected HTTP 400 JSON error.
+- `pip check` still reports the known `mediapipe 0.10.8 is not supported on
+  this platform` warning.
+- `main.py --batch data/test_sample` is still blocked by the known macOS
+  MediaPipe/OpenGL sandbox initialization failure in this agent session.
+
 ## Front-view gate for side-view scoring
 
 Follow-up changes were made after the webcam view showed a frontal pose being

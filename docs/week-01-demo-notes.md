@@ -41,6 +41,8 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
    can run on recorded input.
 6. Use `Download evidence` after a clear result to save the current mode,
    frame, score, angles, and advice as a JSON record.
+7. Use Batch mode for a quick rule-based triage of uploaded media or the
+   teacher image library into `standing`, `sitting`, and `incomplete`.
 
 ## How to explain the increment
 
@@ -62,6 +64,9 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 - Dataset filtering comes before model training because many source images are
   sitting, front-facing, partial-body, or unsuitable for standing side-view
   posture detection.
+- Batch classification is an auto-suggestion only. It is useful for quickly
+  packaging obvious standing/sitting/incomplete samples, but edge cases should
+  still be reviewed manually.
 
 ## Current technical limits
 
@@ -84,3 +89,6 @@ Current webpage polish:
   and right-side metrics update from the same `PostureResult`.
 - Image mode still previews the selected file immediately before analysis.
 - The evidence export is local-only and does not write personal media to Git.
+- Batch mode can include uploaded images/videos and the teacher `train`, `val`,
+  or full image library. It exports a ZIP with categorized files, annotated
+  images, `batch_results.csv`, and `summary.md`.

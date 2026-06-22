@@ -46,6 +46,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   structured angle metrics.
 - Video: uploads one local video, stores it temporarily outside the repo, and
   streams annotated frames with JSON posture metadata.
+- Batch: processes multiple uploaded images/videos or the teacher image library
+  and exports a categorized ZIP.
 - Image and video files are previewed immediately after selection. Analysis is
   only started when the corresponding Analyze button is pressed.
 - Webcam mode uses a local JSON frame stream so the preview image and live
@@ -54,6 +56,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   footer, and right-side metrics update together while the video is processed.
 - Download evidence exports the current mode, source name, timestamp, posture
   result, angle values, advice, and current preview frame as a local JSON file.
+- Batch export writes `standing/`, `sitting/`, `incomplete/`, `annotated/`,
+  `batch_results.csv`, and `summary.md` into a downloadable ZIP.
 - Front-facing or otherwise non-side-view inputs are detected as unsupported
   for the current scoring rule. The page shows `Side view required` instead of
   computing a misleading Forward Head score.
@@ -73,6 +77,8 @@ The webpage keeps the same core overlay as `main.py`:
   right-side metrics panel.
 - Video live results are rendered in the same footer and right-side metrics
   panel, using the current frame result rather than a whole-video summary.
+- Batch results are rendered as summary counts. The ZIP contains the detailed
+  file-level result rows.
 
 ## Current limits
 
@@ -84,6 +90,9 @@ The webpage keeps the same core overlay as `main.py`:
   crashing or showing the full low-level stack in the UI.
 - Video metrics are frame-by-frame only; the demo does not compute a whole-video
   aggregate score.
+- Batch standing/sitting/incomplete classes are rule-based auto-suggestions,
+  not model predictions. They are intended for dataset triage before manual
+  review.
 - The current posture score is intentionally side-view-only. Front-view
   analysis is a future model/rule design task, not part of this Week 1
   baseline.
