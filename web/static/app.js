@@ -34,12 +34,15 @@ const teacherSource = document.querySelector("#teacherSource");
 const analyzeBatchButton = document.querySelector("#analyzeBatch");
 const downloadBatch = document.querySelector("#downloadBatch");
 const downloadEvidence = document.querySelector("#downloadEvidence");
+const captureWebcamButton = document.querySelector("#captureWebcamSet");
+const webcamCaptureStatus = document.querySelector("#webcamCaptureStatus");
 let selectedMediaUrl = "";
 let activeStreamController = null;
 let activeMode = "webcam";
 let latestResult = null;
 let latestFrameDataUrl = "";
 let latestSourceName = "";
+let webcamCaptureDownloadUrl = "";
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -50,6 +53,7 @@ document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
 analyzeBatchButton.addEventListener("click", analyzeBatch);
+captureWebcamButton.addEventListener("click", captureWebcamSet);
 downloadEvidence.addEventListener("click", downloadCurrentEvidence);
 imageInput.addEventListener("change", previewSelectedImage);
 videoInput.addEventListener("change", previewSelectedVideo);
@@ -341,6 +345,41 @@ async function analyzeBatch() {
   }
 }
 
+async function captureWebcamSet() {
+  if (webcamCaptureDownloadUrl) {
+    window.location.href = webcamCaptureDownloadUrl;
+    setTimeout(resetWebcamCaptureSet, 600);
+    return;
+  }
+
+  captureWebcamButton.disabled = true;
+  try {
+    for (let remaining = 3; remaining > 0; remaining -= 1) {
+      webcamCaptureStatus.textContent = `Capturing in ${remaining}s`;
+      setStatus(`Capture ${remaining}s`);
+      await delay(1000);
+    }
+
+    const response = await fetch("/api/webcam-capture", { method: "POST" });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Webcam capture failed.");
+    }
+
+    updateWebcamCaptureUi(payload);
+    if (payload.ready) {
+      setStatus("ZIP ready", "good");
+    } else {
+      setStatus("Captured", "good");
+    }
+  } catch (error) {
+    setStatus("Capture error", "bad");
+    webcamCaptureStatus.textContent = error.message;
+  } finally {
+    captureWebcamButton.disabled = false;
+  }
+}
+
 function renderMetrics(result) {
   const advice = result.advice || [];
   const angles = result.angles || [];
@@ -471,6 +510,30 @@ function stopActiveStream() {
 function resetBatchDownload() {
   downloadBatch.hidden = true;
   downloadBatch.removeAttribute("href");
+}
+
+function updateWebcamCaptureUi(payload) {
+  webcamCaptureStatus.textContent = `${payload.count}/${payload.target} captured`;
+  if (payload.ready && payload.download_url) {
+    webcamCaptureDownloadUrl = payload.download_url;
+    captureWebcamButton.textContent = "Download capture ZIP";
+    webcamCaptureStatus.textContent = `${payload.count}/${payload.target} captured - ready to download`;
+  }
+}
+
+async function resetWebcamCaptureSet() {
+  webcamCaptureDownloadUrl = "";
+  captureWebcamButton.textContent = "Capture / Download";
+  webcamCaptureStatus.textContent = "0/10 captured";
+  try {
+    await fetch("/api/webcam-captures-reset", { method: "POST" });
+  } catch (error) {
+    setStatus("Reset skipped", "bad");
+  }
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function refreshEvidenceButton() {

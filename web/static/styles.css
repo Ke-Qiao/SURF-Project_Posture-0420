@@ -185,6 +185,12 @@ input {
   text-decoration: none;
 }
 
+.inline-status {
+  color: var(--muted);
+  font-size: 13px;
+  text-align: center;
+}
+
 .evidence-button {
   width: 100%;
   margin-top: 18px;

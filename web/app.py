@@ -13,6 +13,7 @@ import time
 import uuid
 import zipfile
 from pathlib import Path
+from threading import Lock
 
 import cv2
 import numpy as np
@@ -39,13 +40,20 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-01-batch-v1"
+APP_VERSION = "week-01-webcam-capture-v1"
+WEBCAM_CAPTURE_TARGET = 10
+WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
 _VIDEO_UPLOADS: dict[str, Path] = {}
 _BATCH_EXPORTS: dict[str, Path] = {}
+_WEBCAM_CAPTURE_LOCK = Lock()
+_WEBCAM_LATEST: dict = {}
+_WEBCAM_CAPTURES: list[dict] = []
+_WEBCAM_CAPTURE_ZIPS: dict[str, Path] = {}
+_WEBCAM_CAPTURE_TOKEN = ""
 
 
 @app.get("/")
@@ -67,6 +75,62 @@ def health():
             "upload_root": str(UPLOAD_ROOT),
         }
     )
+
+
+@app.post("/api/webcam-capture")
+def webcam_capture():
+    """Capture the latest streamed webcam frame into a 10-photo local set."""
+    global _WEBCAM_CAPTURE_TOKEN
+
+    with _WEBCAM_CAPTURE_LOCK:
+        if not _WEBCAM_LATEST:
+            return _json_error("No webcam frame is ready. Start camera first.", 409)
+
+        latest_age = time.time() - float(_WEBCAM_LATEST.get("stored_at", 0))
+        if latest_age > WEBCAM_LATEST_MAX_AGE_SECONDS:
+            return _json_error("Webcam frame is stale. Restart camera before capture.", 409)
+
+        if len(_WEBCAM_CAPTURES) >= WEBCAM_CAPTURE_TARGET:
+            return jsonify(_webcam_capture_payload(ready=True))
+
+        capture_index = len(_WEBCAM_CAPTURES) + 1
+        _WEBCAM_CAPTURES.append(
+            {
+                "index": capture_index,
+                "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                "original_jpeg": _WEBCAM_LATEST["original_jpeg"],
+                "annotated_jpeg": _WEBCAM_LATEST["annotated_jpeg"],
+                "result": dict(_WEBCAM_LATEST["result"]),
+            }
+        )
+
+        ready = len(_WEBCAM_CAPTURES) >= WEBCAM_CAPTURE_TARGET
+        if ready and not _WEBCAM_CAPTURE_TOKEN:
+            _WEBCAM_CAPTURE_TOKEN = uuid.uuid4().hex
+            zip_path = _create_webcam_capture_zip(_WEBCAM_CAPTURE_TOKEN, list(_WEBCAM_CAPTURES))
+            _WEBCAM_CAPTURE_ZIPS[_WEBCAM_CAPTURE_TOKEN] = zip_path
+
+        return jsonify(_webcam_capture_payload(ready=ready))
+
+
+@app.post("/api/webcam-captures-reset")
+def webcam_captures_reset():
+    """Clear the local webcam capture set after a download is started."""
+    global _WEBCAM_CAPTURE_TOKEN
+
+    with _WEBCAM_CAPTURE_LOCK:
+        _WEBCAM_CAPTURES.clear()
+        _WEBCAM_CAPTURE_TOKEN = ""
+    return jsonify({"status": "ok", "count": 0, "target": WEBCAM_CAPTURE_TARGET})
+
+
+@app.get("/api/webcam-captures-download/<token>")
+def webcam_captures_download(token: str):
+    """Download one completed webcam capture ZIP."""
+    path = _WEBCAM_CAPTURE_ZIPS.get(token)
+    if path is None or not path.exists():
+        return _json_error("Webcam capture export not found.", 404)
+    return send_file(path, as_attachment=True, download_name=path.name)
 
 
 @app.post("/api/analyze-image")
@@ -192,7 +256,7 @@ def stream_webcam():
 def stream_webcam_json():
     """Stream annotated webcam frames with JSON posture metadata."""
     return Response(
-        _json_frame_stream(0, label="Webcam unavailable"),
+        _json_frame_stream(0, label="Webcam unavailable", cache_webcam_latest=True),
         mimetype="application/x-ndjson",
     )
 
@@ -336,6 +400,92 @@ def _create_batch_export(token: str, sources: list[dict[str, str | Path]]) -> di
     }
 
 
+def _store_webcam_latest(original_frame, annotated_frame, result_payload: dict) -> bytes:
+    original_jpeg = _encode_jpeg(original_frame)
+    annotated_jpeg = _encode_jpeg(annotated_frame)
+    with _WEBCAM_CAPTURE_LOCK:
+        _WEBCAM_LATEST.clear()
+        _WEBCAM_LATEST.update(
+            {
+                "original_jpeg": original_jpeg,
+                "annotated_jpeg": annotated_jpeg,
+                "result": result_payload,
+                "stored_at": time.time(),
+            }
+        )
+    return annotated_jpeg
+
+
+def _webcam_capture_payload(ready: bool) -> dict:
+    download_url = (
+        f"/api/webcam-captures-download/{_WEBCAM_CAPTURE_TOKEN}"
+        if ready and _WEBCAM_CAPTURE_TOKEN
+        else ""
+    )
+    return {
+        "count": len(_WEBCAM_CAPTURES),
+        "target": WEBCAM_CAPTURE_TARGET,
+        "ready": ready,
+        "download_url": download_url,
+    }
+
+
+def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
+    export_dir = UPLOAD_ROOT / f"webcam-captures-{token}"
+    original_dir = export_dir / "original"
+    annotated_dir = export_dir / "mediapipe"
+    original_dir.mkdir(parents=True, exist_ok=True)
+    annotated_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    for capture in captures:
+        index = int(capture["index"])
+        original_path = original_dir / f"{index:02d}-original.jpg"
+        annotated_path = annotated_dir / f"{index:02d}-mediapipe.jpg"
+        original_path.write_bytes(capture["original_jpeg"])
+        annotated_path.write_bytes(capture["annotated_jpeg"])
+        result = capture["result"]
+        rows.append(
+            {
+                "index": index,
+                "captured_at": capture["captured_at"],
+                "posture": result.get("posture", ""),
+                "score": "" if result.get("score") is None else result.get("score"),
+                "side": result.get("side", ""),
+                "view": result.get("view", ""),
+                "view_valid": result.get("view_valid", ""),
+            }
+        )
+
+    csv_path = export_dir / "capture_log.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(
+            f,
+            fieldnames=["index", "captured_at", "posture", "score", "side", "view", "view_valid"],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
+
+    summary_path = export_dir / "summary.md"
+    summary_path.write_text(
+        "\n".join(
+            [
+                "# SURF Webcam Capture Set",
+                "",
+                f"- Captures: {len(captures)}",
+                "- Each capture includes the original webcam frame and the MediaPipe-processed frame.",
+                "- This export is local-only and is not committed to Git.",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    zip_path = UPLOAD_ROOT / f"surf-webcam-captures-{token}.zip"
+    _zip_directory(export_dir, zip_path)
+    return zip_path
+
+
 def _export_filename(index: int, display_name: str, fallback_suffix: str) -> str:
     suffix = Path(display_name).suffix or fallback_suffix or ".dat"
     stem = Path(display_name).stem or f"item-{index}"
@@ -380,7 +530,7 @@ def _frame_stream(source, label: str):
             detector.close()
 
 
-def _json_frame_stream(source, label: str):
+def _json_frame_stream(source, label: str, cache_webcam_latest: bool = False):
     detector = None
     cap = None
     try:
@@ -397,12 +547,18 @@ def _json_frame_stream(source, label: str):
             ok, frame = cap.read()
             if not ok:
                 break
+            original_frame = frame.copy()
             result = annotate_frame(detector, frame, show_text=False)
-            encoded = base64.b64encode(_encode_jpeg(frame)).decode("ascii")
+            result_payload = result_to_dict(result)
+            if cache_webcam_latest:
+                jpeg = _store_webcam_latest(original_frame, frame, result_payload)
+            else:
+                jpeg = _encode_jpeg(frame)
+            encoded = base64.b64encode(jpeg).decode("ascii")
             yield _json_line(
                 {
                     "image": f"data:image/jpeg;base64,{encoded}",
-                    "result": result_to_dict(result),
+                    "result": result_payload,
                 }
             )
             time.sleep(delay)
@@ -499,7 +655,7 @@ def main() -> None:
         host="127.0.0.1",
         port=port,
         debug=False,
-        threaded=False,
+        threaded=True,
         use_reloader=False,
     )
 

@@ -43,6 +43,8 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
    frame, score, angles, and advice as a JSON record.
 7. Use Batch mode for a quick rule-based triage of uploaded media or the
    teacher image library into `standing`, `sitting`, and `incomplete`.
+8. In Webcam mode, use `Capture / Download` to collect 10 delayed snapshots and
+   download a ZIP containing original frames plus MediaPipe-processed frames.
 
 ## How to explain the increment
 
@@ -92,3 +94,6 @@ Current webpage polish:
 - Batch mode can include uploaded images/videos and the teacher `train`, `val`,
   or full image library. It exports a ZIP with categorized files, annotated
   images, `batch_results.csv`, and `summary.md`.
+- Webcam capture waits 3 seconds per click, stores up to 10 local snapshots,
+  then switches the button to download a ZIP with `original/`, `mediapipe/`,
+  `capture_log.csv`, and `summary.md`.

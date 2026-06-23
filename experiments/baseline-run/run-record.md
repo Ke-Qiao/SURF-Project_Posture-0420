@@ -345,6 +345,43 @@ Validation results:
 - `main.py --batch data/test_sample` is still blocked by the known macOS
   MediaPipe/OpenGL sandbox initialization failure in this agent session.
 
+## Week 1 webcam capture ZIP export
+
+Follow-up changes were made to support webcam data collection from the web demo:
+
+- Added a `Capture / Download` button inside Webcam mode.
+- Each click waits 3 seconds, then stores the latest server-side webcam frame in
+  memory.
+- Each capture stores both the original frame and the MediaPipe-processed frame.
+- After 10 captures, the button switches to `Download capture ZIP`.
+- The ZIP contains `original/`, `mediapipe/`, `capture_log.csv`, and
+  `summary.md`.
+- Updated the web app health version marker to `week-01-webcam-capture-v1`.
+- The capture endpoint rejects stale cached webcam frames, so stopping the
+  camera will not accidentally export an old frame after the cache expires.
+
+Validation results:
+
+- `.venv/bin/python -m unittest discover -s tests` passed 19 tests.
+- `PYTHONPYCACHEPREFIX=/private/tmp/surf-posture-pycache .venv/bin/python -m py_compile ...`
+  passed for `teacher_baseline.py`, `main.py`, `posture/*.py`, `scripts/*.py`,
+  `web/*.py`, and `tests/*.py`.
+- Import check passed for `cv2`, `mediapipe`, `numpy`, `matplotlib`, and
+  `flask`.
+- `node --check web/static/app.js` passed.
+- `zsh -n start_web_demo.command` passed.
+- `git diff --check` passed.
+- `.venv/bin/pip check` still reports the known
+  `mediapipe 0.10.8 is not supported on this platform` warning.
+- Local smoke test started `SURF_NO_OPEN=1 ./start_web_demo.command` at
+  `http://127.0.0.1:5050`.
+- `GET /health` returned HTTP 200 with
+  `"version":"week-01-webcam-capture-v1"`.
+- `POST /api/webcam-capture` without an active camera frame returned the
+  expected HTTP 409 `No webcam frame is ready. Start camera first.` message.
+- Static checks confirmed the updated `Capture / Download` button and webcam
+  capture JavaScript were served by the running local app.
+
 ## Week 1 batch triage export
 
 Follow-up changes were made to support batch media triage from the web demo:

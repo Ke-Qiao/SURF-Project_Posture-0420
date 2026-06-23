@@ -48,6 +48,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   streams annotated frames with JSON posture metadata.
 - Batch: processes multiple uploaded images/videos or the teacher image library
   and exports a categorized ZIP.
+- Webcam capture: waits 3 seconds per click, stores the current original frame
+  and MediaPipe-processed frame, then prepares a ZIP after 10 captures.
 - Image and video files are previewed immediately after selection. Analysis is
   only started when the corresponding Analyze button is pressed.
 - Webcam mode uses a local JSON frame stream so the preview image and live
@@ -58,6 +60,8 @@ SURF_WEB_PORT=5051 ./start_web_demo.command
   result, angle values, advice, and current preview frame as a local JSON file.
 - Batch export writes `standing/`, `sitting/`, `incomplete/`, `annotated/`,
   `batch_results.csv`, and `summary.md` into a downloadable ZIP.
+- Webcam capture export writes `original/`, `mediapipe/`, `capture_log.csv`,
+  and `summary.md` into a downloadable ZIP.
 - Front-facing or otherwise non-side-view inputs are detected as unsupported
   for the current scoring rule. The page shows `Side view required` instead of
   computing a misleading Forward Head score.
@@ -79,6 +83,8 @@ The webpage keeps the same core overlay as `main.py`:
   panel, using the current frame result rather than a whole-video summary.
 - Batch results are rendered as summary counts. The ZIP contains the detailed
   file-level result rows.
+- Webcam capture uses the latest server-side webcam frame. Start the camera and
+  wait for the preview before capturing.
 
 ## Current limits
 

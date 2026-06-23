@@ -37,7 +37,7 @@ health_body() {
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-01-batch-v1"'* ]]
+  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-01-webcam-capture-v1"'* ]]
 }
 
 port_is_open() {
