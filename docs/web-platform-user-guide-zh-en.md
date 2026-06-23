@@ -35,6 +35,18 @@ cd /Users/ke-qiao/Desktop/surf/posture-detection
 ./start_phone_demo.command
 ```
 
+If the phone browser blocks `Start phone camera`, use HTTPS:
+
+```bash
+./start_phone_https_demo.command
+```
+
+如果手机浏览器拦截 `Start phone camera`，使用 HTTPS 启动：
+
+```bash
+./start_phone_https_demo.command
+```
+
 Equivalent command-line form / 等价命令行写法：
 
 ```bash
@@ -47,12 +59,24 @@ The script prints a `Phone URL`, for example:
 http://192.168.x.x:5050
 ```
 
+The HTTPS script prints a URL like:
+
+```text
+https://192.168.x.x:5443
+```
+
 Use this URL on a phone connected to the same Wi-Fi network.
 
 脚本会显示 `Phone URL`，例如：
 
 ```text
 http://192.168.x.x:5050
+```
+
+HTTPS 脚本会显示类似：
+
+```text
+https://192.168.x.x:5443
 ```
 
 手机和电脑连接同一个 Wi-Fi 后，在手机浏览器中打开这个地址。
@@ -71,22 +95,75 @@ If the printed phone IP is not the Mac Wi-Fi IP, set it manually:
 SURF_PHONE_IP=192.168.2.3 ./start_phone_demo.command
 ```
 
+For HTTPS:
+
+```bash
+SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
+```
+
 如果脚本打印出来的手机 IP 不是 Mac 的 Wi-Fi IP，可以手动指定：
 
 ```bash
 SURF_PHONE_IP=192.168.2.3 ./start_phone_demo.command
 ```
 
+HTTPS 模式：
+
+```bash
+SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
+```
+
 For live phone camera collection, tap `Start phone camera` in the `Webcam`
 panel. Most mobile browsers require HTTPS or another secure browser context
-before allowing `getUserMedia()` camera access. If the phone browser blocks
-camera access on an HTTP LAN URL, use `Image` or `Batch` upload as the fallback,
-or add an HTTPS launch path before team-wide collection.
+before allowing `getUserMedia()` camera access. If HTTP is blocked, use
+`start_phone_https_demo.command`.
 
 如果要直接调用手机摄像头，在手机页面的 `Webcam` 面板点击
 `Start phone camera`。多数手机浏览器要求 HTTPS 或安全上下文才能允许
-`getUserMedia()` 摄像头访问。如果手机浏览器拒绝 HTTP 局域网摄像头，
-先使用 `Image` 或 `Batch` 上传作为备选方案，后续再补 HTTPS 启动路径。
+`getUserMedia()` 摄像头访问。如果 HTTP 被拦截，使用
+`start_phone_https_demo.command`。
+
+### HTTPS trust setup / HTTPS 信任设置
+
+The HTTPS script creates local certificates in `temp/certs/`. They are local
+only and ignored by Git. iPhone Safari usually needs the local CA to be trusted
+before the page can use the camera.
+
+HTTPS 脚本会在 `temp/certs/` 下生成本地证书。这些证书只保存在本机，
+不会进入 Git。iPhone Safari 通常需要先信任本地 CA，网页才能调用摄像头。
+
+English steps:
+
+1. Run `./start_phone_https_demo.command`.
+2. Read the printed `Local CA certificate for phone trust` path.
+3. AirDrop that `.crt` file to the iPhone, or share it from Finder.
+4. On iPhone, install the downloaded profile in Settings.
+5. Go to Settings > General > About > Certificate Trust Settings.
+6. Enable full trust for `SURF Posture Local CA`.
+7. Open the printed HTTPS `Phone URL`.
+8. Tap `Start phone camera` and allow camera permission.
+
+中文步骤：
+
+1. 运行 `./start_phone_https_demo.command`。
+2. 查看终端打印的 `Local CA certificate for phone trust` 路径。
+3. 把这个 `.crt` 文件通过 AirDrop 发到 iPhone，或从 Finder 分享到 iPhone。
+4. 在 iPhone 设置中安装下载的描述文件。
+5. 进入 设置 > 通用 > 关于本机 > 证书信任设置。
+6. 打开 `SURF Posture Local CA` 的完全信任。
+7. 打开终端打印的 HTTPS `Phone URL`。
+8. 点击 `Start phone camera`，允许摄像头权限。
+
+### HTTPS troubleshooting / HTTPS 排查
+
+| Symptom | English fix | 中文处理 |
+| --- | --- | --- |
+| Phone cannot open the URL | Confirm the terminal says `Running on all addresses (0.0.0.0)` and use the printed `Phone URL`, not an old port. Make sure Mac and phone are on the same Wi-Fi. | 确认终端显示 `Running on all addresses (0.0.0.0)`，并使用本次终端打印的 `Phone URL`，不要用旧端口。确认 Mac 和手机在同一个 Wi-Fi。 |
+| Printed IP is not the Mac Wi-Fi IP | Restart with `SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command`. | 用 `SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command` 重新启动。 |
+| Browser says the page is not trusted | Install the printed `.crt` CA file and enable full trust for `SURF Posture Local CA`. Then close and reopen the browser tab. | 安装终端打印的 `.crt` CA 文件，并为 `SURF Posture Local CA` 打开完全信任，然后关闭并重新打开浏览器标签页。 |
+| `Start phone camera` still fails | Check browser camera permission for the site. On iPhone Safari, use the `AA` / site settings menu or Settings > Safari > Camera. | 检查该网站的摄像头权限。iPhone Safari 可从地址栏 `AA` / 网站设置，或 设置 > Safari > 摄像头 中检查。 |
+| Still blocked after trust setup | Restart the HTTPS script, reopen the HTTPS URL, and verify `/health` shows `"https": true`. Use `Image` or `Batch` upload as a fallback for the meeting if needed. | 重新启动 HTTPS 脚本，重新打开 HTTPS 地址，并确认 `/health` 显示 `"https": true`。如果会议前仍不稳定，先用 `Image` 或 `Batch` 上传作为备选。 |
+| Mac firewall prompt appears | Allow incoming connections for Terminal/Python for this local demo. | 如果 Mac 防火墙弹窗，允许 Terminal/Python 的传入连接。 |
 
 ### Startup environment variables / 启动环境变量
 
@@ -94,6 +171,7 @@ or add an HTTPS launch path before team-wide collection.
 | --- | --- | --- |
 | `SURF_WEB_PORT` | Sets the web server port. Default is `5050`. | 设置端口，默认 `5050`。 |
 | `SURF_WEB_HOST` | Sets the network host. Use `127.0.0.1` for local-only, `0.0.0.0` for phone/LAN access. | 设置访问范围。`127.0.0.1` 仅本机，`0.0.0.0` 支持手机局域网访问。 |
+| `SURF_WEB_HTTPS=1` | Starts Flask with the generated local HTTPS certificate. | 使用生成的本地 HTTPS 证书启动 Flask。 |
 | `SURF_PHONE_IP` | Overrides the phone URL IP printed by the startup script. Use this if auto-detection chooses a virtual network address. | 手动指定脚本打印的手机访问 IP。当自动识别到虚拟网卡地址时使用。 |
 | `SURF_NO_OPEN=1` | Starts the server without opening a browser automatically. | 启动服务但不自动打开浏览器。 |
 

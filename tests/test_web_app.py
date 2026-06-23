@@ -63,6 +63,7 @@ class WebAppContractTests(unittest.TestCase):
         self.assertEqual("surf-posture-web", response.json["app"])
         self.assertEqual("week-02-mobile-camera-v1", response.json["version"])
         self.assertIn(response.json["host"], {"127.0.0.1", "0.0.0.0"})
+        self.assertFalse(response.json["https"])
 
     def test_load_video_returns_json_stream_url(self):
         response = self.client.post(

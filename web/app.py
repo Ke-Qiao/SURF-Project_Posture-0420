@@ -74,6 +74,7 @@ def health():
             "status": "ok",
             "version": APP_VERSION,
             "host": os.environ.get("SURF_WEB_HOST", "127.0.0.1"),
+            "https": bool(os.environ.get("SURF_WEB_CERT_FILE") and os.environ.get("SURF_WEB_KEY_FILE")),
             "opencv": cv2.__version__,
             "pid": os.getpid(),
             "upload_root": str(UPLOAD_ROOT),
@@ -887,12 +888,16 @@ def _runtime_error_message() -> str:
 def main() -> None:
     port = int(os.environ.get("SURF_WEB_PORT", "5050"))
     host = os.environ.get("SURF_WEB_HOST", "127.0.0.1")
+    cert_file = os.environ.get("SURF_WEB_CERT_FILE", "").strip()
+    key_file = os.environ.get("SURF_WEB_KEY_FILE", "").strip()
+    ssl_context = (cert_file, key_file) if cert_file and key_file else None
     app.run(
         host=host,
         port=port,
         debug=False,
         threaded=True,
         use_reloader=False,
+        ssl_context=ssl_context,
     )
 
 

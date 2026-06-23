@@ -39,7 +39,8 @@
    - 手机浏览器打开终端显示的 `Phone URL`。
    - 如果脚本打印的 IP 不是 Mac Wi-Fi IP，可以使用 `SURF_PHONE_IP=192.168.2.3 ./start_phone_demo.command` 手动指定。
    - 点击 `Start phone camera` 调用手机摄像头。
-   - 注意：多数手机浏览器要求 HTTPS 或安全上下文才能允许实时摄像头。如果 HTTP 局域网 URL 被浏览器拒绝，暂时使用 `Image` 或 `Batch` 上传照片作为备选。
+   - 注意：多数手机浏览器要求 HTTPS 或安全上下文才能允许实时摄像头。如果 HTTP 局域网 URL 被浏览器拒绝，使用 `./start_phone_https_demo.command`。
+   - iPhone 上第一次使用 HTTPS 时，需要安装并完全信任终端打印的 `SURF Posture Local CA` 证书。
 3. 在 Webcam 面板填写：
    - `Collector`
    - `Subject ID`

@@ -38,6 +38,12 @@ Phone collection on the same Wi-Fi:
 ./start_phone_demo.command
 ```
 
+Phone live camera collection with HTTPS:
+
+```bash
+./start_phone_https_demo.command
+```
+
 Equivalent command-line form:
 
 ```bash
@@ -62,8 +68,26 @@ SURF_PHONE_IP=192.168.2.3 ./start_phone_demo.command
 
 On phones, open the printed phone URL and use `Start phone camera` in the
 `Webcam` panel. Browser live camera access normally requires HTTPS or another
-secure browser context; if the phone browser blocks live camera on HTTP LAN,
-use `Image` or `Batch` upload as the fallback until HTTPS is enabled.
+secure browser context. Use `start_phone_https_demo.command` when the browser
+blocks camera access on the HTTP LAN page.
+
+The HTTPS script creates local certificates under `temp/certs/`. These files are
+ignored by Git. For iPhone Safari, install and trust the printed local CA
+certificate before opening the HTTPS phone URL:
+
+1. Start `./start_phone_https_demo.command`.
+2. Find the printed `Local CA certificate for phone trust` path.
+3. AirDrop that `.crt` file to the iPhone, or open it from Finder and share it
+   to the iPhone.
+4. On iPhone, install the downloaded profile in Settings.
+5. Enable full trust in Settings > General > About > Certificate Trust Settings.
+6. Open the printed `https://<mac-wifi-ip>:<port>` phone URL.
+
+If the printed HTTPS phone IP is wrong, use:
+
+```bash
+SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
+```
 
 ## Data Collection Flow
 

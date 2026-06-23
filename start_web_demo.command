@@ -6,8 +6,18 @@ cd "$PROJECT_DIR"
 
 PORT="${SURF_WEB_PORT:-5050}"
 HOST="${SURF_WEB_HOST:-127.0.0.1}"
-URL="http://127.0.0.1:${PORT}"
+HTTPS="${SURF_WEB_HTTPS:-0}"
+SCHEME="http"
+if [[ "$HTTPS" == "1" ]]; then
+  SCHEME="https"
+fi
+URL="${SCHEME}://127.0.0.1:${PORT}"
 PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
+CERT_DIR="$PROJECT_DIR/temp/certs"
+CA_CERT="$CERT_DIR/surf-posture-local-ca.crt"
+CA_KEY="$CERT_DIR/surf-posture-local-ca.key"
+SERVER_CERT=""
+SERVER_KEY=""
 
 echo "SURF Posture Web Demo"
 echo "Project: $PROJECT_DIR"
@@ -34,7 +44,7 @@ open_demo_url() {
 }
 
 health_body() {
-  /usr/bin/curl --max-time 1 -fsS "$1/health" 2>/dev/null || true
+  /usr/bin/curl -k --max-time 1 -fsS "$1/health" 2>/dev/null || true
 }
 
 is_current_demo_server() {
@@ -58,7 +68,7 @@ pick_available_url() {
   local body
 
   while (( candidate_port < start_port + 10 )); do
-    candidate_url="http://127.0.0.1:${candidate_port}"
+    candidate_url="${SCHEME}://127.0.0.1:${candidate_port}"
     body="$(health_body "$candidate_url")"
 
     if is_current_demo_server "$body"; then
@@ -82,6 +92,80 @@ pick_available_url() {
 
   echo "Could not find an available port from ${start_port} to $((start_port + 9))."
   exit 1
+}
+
+ensure_https_cert() {
+  local lan_ip="$1"
+  local cert_ip="${lan_ip:-127.0.0.1}"
+  local safe_ip="${cert_ip//./-}"
+  local ca_conf="$CERT_DIR/ca.conf"
+  local server_conf="$CERT_DIR/server-${safe_ip}.conf"
+  local server_csr="$CERT_DIR/server-${safe_ip}.csr"
+
+  mkdir -p "$CERT_DIR"
+  chmod 700 "$CERT_DIR"
+
+  if [[ ! -f "$CA_CERT" || ! -f "$CA_KEY" ]]; then
+    cat > "$ca_conf" <<'EOF'
+[ req ]
+prompt = no
+distinguished_name = dn
+x509_extensions = v3_ca
+
+[ dn ]
+CN = SURF Posture Local CA
+
+[ v3_ca ]
+basicConstraints = critical,CA:true
+keyUsage = critical,keyCertSign,cRLSign
+subjectKeyIdentifier = hash
+authorityKeyIdentifier = keyid:always,issuer
+EOF
+    /usr/bin/openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \
+      -keyout "$CA_KEY" \
+      -out "$CA_CERT" \
+      -config "$ca_conf" >/dev/null 2>&1
+    chmod 600 "$CA_KEY"
+  fi
+
+  SERVER_CERT="$CERT_DIR/surf-posture-${safe_ip}.crt"
+  SERVER_KEY="$CERT_DIR/surf-posture-${safe_ip}.key"
+
+  if [[ ! -f "$SERVER_CERT" || ! -f "$SERVER_KEY" ]]; then
+    cat > "$server_conf" <<EOF
+[ req ]
+prompt = no
+distinguished_name = dn
+req_extensions = v3_req
+
+[ dn ]
+CN = surf-posture.local
+
+[ v3_req ]
+basicConstraints = CA:false
+keyUsage = critical,digitalSignature,keyEncipherment
+extendedKeyUsage = serverAuth
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = localhost
+IP.1 = 127.0.0.1
+IP.2 = ${cert_ip}
+EOF
+    /usr/bin/openssl req -new -newkey rsa:2048 -nodes \
+      -keyout "$SERVER_KEY" \
+      -out "$server_csr" \
+      -config "$server_conf" >/dev/null 2>&1
+    /usr/bin/openssl x509 -req -sha256 -days 825 \
+      -in "$server_csr" \
+      -CA "$CA_CERT" \
+      -CAkey "$CA_KEY" \
+      -CAcreateserial \
+      -out "$SERVER_CERT" \
+      -extensions v3_req \
+      -extfile "$server_conf" >/dev/null 2>&1
+    chmod 600 "$SERVER_KEY"
+  fi
 }
 
 lan_ip() {
@@ -173,18 +257,31 @@ fi
 
 pick_available_url
 
+LAN_IP=""
+if [[ "$HOST" == "0.0.0.0" ]]; then
+  LAN_IP="$(lan_ip)"
+fi
+
+if [[ "$HTTPS" == "1" ]]; then
+  ensure_https_cert "$LAN_IP"
+fi
+
 echo "Starting server..."
 echo "Local URL: $URL"
 if [[ "$HOST" == "0.0.0.0" ]]; then
-  LAN_IP="$(lan_ip)"
   if [[ -n "$LAN_IP" ]]; then
-    echo "Phone URL: http://${LAN_IP}:${PORT}"
+    echo "Phone URL: ${SCHEME}://${LAN_IP}:${PORT}"
     echo "Use the same Wi-Fi network on the phone and computer."
   else
-    echo "Phone URL: use this computer's LAN IP with port ${PORT}."
+    echo "Phone URL: use this computer's LAN IP with ${SCHEME} and port ${PORT}."
   fi
 else
   echo "Phone collection disabled. Start with SURF_WEB_HOST=0.0.0.0 for LAN access."
+fi
+if [[ "$HTTPS" == "1" ]]; then
+  echo "HTTPS enabled."
+  echo "Local CA certificate for phone trust: $CA_CERT"
+  echo "On iPhone: AirDrop/open this .crt, install the profile, then enable full trust."
 fi
 echo "Leave this window open while presenting."
 echo "Press Ctrl+C to stop the demo."
@@ -194,4 +291,9 @@ if [[ "${SURF_NO_OPEN:-0}" != "1" ]]; then
   (sleep 2; /usr/bin/open "$URL" >/dev/null 2>&1 || true) &
 fi
 
-exec env SURF_WEB_PORT="$PORT" SURF_WEB_HOST="$HOST" "$PYTHON_BIN" -m web.app
+exec env \
+  SURF_WEB_PORT="$PORT" \
+  SURF_WEB_HOST="$HOST" \
+  SURF_WEB_CERT_FILE="$SERVER_CERT" \
+  SURF_WEB_KEY_FILE="$SERVER_KEY" \
+  "$PYTHON_BIN" -m web.app

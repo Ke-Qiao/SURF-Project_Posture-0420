@@ -14,12 +14,15 @@
 PYTHONPYCACHEPREFIX=/private/tmp/surf-posture-pycache .venv/bin/python -m py_compile teacher_baseline.py main.py posture/*.py scripts/*.py web/*.py tests/*.py
 node --check web/static/app.js
 zsh -n start_web_demo.command
+zsh -n start_phone_demo.command
+zsh -n start_phone_https_demo.command
 git diff --check
 ```
 
 ## Web 检查
 
 - `/health` 返回 `week-02-mobile-camera-v1`。
+- HTTPS 模式下 `/health` 返回 `"https": true`。
 - image、video、webcam、batch 四种模式仍可切换。
 - Webcam 面板中 `Start computer camera` 和 `Start phone camera` 都显示出来。
 - Webcam 采集缺少 collector、subject、label 或 reference 时会拒绝。
