@@ -40,9 +40,11 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-01-webcam-capture-v1"
+APP_VERSION = "week-02-data-platform-v1"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
+REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")
+ANGLE_FIELD_NAMES = ("ear_shoulder_hip", "shoulder_hip_knee", "hip_knee_ankle")
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
@@ -82,6 +84,10 @@ def webcam_capture():
     """Capture the latest streamed webcam frame into a 10-photo local set."""
     global _WEBCAM_CAPTURE_TOKEN
 
+    metadata, error = _capture_metadata()
+    if error:
+        return _json_error(error, 400)
+
     with _WEBCAM_CAPTURE_LOCK:
         if not _WEBCAM_LATEST:
             return _json_error("No webcam frame is ready. Start camera first.", 409)
@@ -99,8 +105,12 @@ def webcam_capture():
                 "index": capture_index,
                 "captured_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
                 "original_jpeg": _WEBCAM_LATEST["original_jpeg"],
-                "annotated_jpeg": _WEBCAM_LATEST["annotated_jpeg"],
+                "annotated_jpeg": _annotated_with_reference(
+                    _WEBCAM_LATEST["annotated_jpeg"],
+                    metadata["reference"],
+                ),
                 "result": dict(_WEBCAM_LATEST["result"]),
+                "metadata": metadata,
             }
         )
 
@@ -416,6 +426,76 @@ def _store_webcam_latest(original_frame, annotated_frame, result_payload: dict) 
     return annotated_jpeg
 
 
+def _capture_metadata() -> tuple[dict, str | None]:
+    payload = request.get_json(silent=True) or {}
+    collector = _clean_text(payload.get("collector", ""), 60)
+    subject_id = _clean_text(payload.get("subject_id", ""), 60)
+    label = _clean_text(payload.get("label", ""), 12).lower()
+    notes = _clean_text(payload.get("notes", ""), 240)
+    reference = _clean_reference(payload.get("reference"))
+
+    if not collector:
+        return {}, "collector is required."
+    if not subject_id:
+        return {}, "subject_id is required."
+    if label not in {"good", "bad"}:
+        return {}, "label must be good or bad."
+    if not _reference_complete(reference):
+        return {}, "reference skeleton is required."
+
+    return {
+        "collector": collector,
+        "subject_id": subject_id,
+        "label": label,
+        "notes": notes,
+        "reference": reference,
+    }, None
+
+
+def _reference_complete(reference: dict) -> bool:
+    points = reference.get("points", {}) if isinstance(reference, dict) else {}
+    return all(name in points for name in REFERENCE_POINT_NAMES)
+
+
+def _clean_text(value, max_len: int) -> str:
+    return str(value or "").strip()[:max_len]
+
+
+def _clean_reference(reference) -> dict:
+    if not isinstance(reference, dict):
+        return {}
+
+    raw_points = reference.get("points", {})
+    points = {}
+    if isinstance(raw_points, dict):
+        for name in REFERENCE_POINT_NAMES:
+            point = raw_points.get(name)
+            if not isinstance(point, dict):
+                continue
+            try:
+                x = min(1.0, max(0.0, float(point["x"])))
+                y = min(1.0, max(0.0, float(point["y"])))
+            except (KeyError, TypeError, ValueError):
+                continue
+            points[name] = {"x": round(x, 6), "y": round(y, 6)}
+
+    raw_angles = reference.get("angles", {})
+    angles = {}
+    if isinstance(raw_angles, dict):
+        for name in ANGLE_FIELD_NAMES:
+            try:
+                angles[name] = round(float(raw_angles[name]), 1)
+            except (KeyError, TypeError, ValueError):
+                continue
+
+    return {
+        "points": points,
+        "angles": angles,
+        "source": _clean_text(reference.get("source", "web"), 40),
+        "updated_at": _clean_text(reference.get("updated_at", ""), 40),
+    }
+
+
 def _webcam_capture_payload(ready: bool) -> dict:
     download_url = (
         f"/api/webcam-captures-download/{_WEBCAM_CAPTURE_TOKEN}"
@@ -445,26 +525,62 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
         original_path.write_bytes(capture["original_jpeg"])
         annotated_path.write_bytes(capture["annotated_jpeg"])
         result = capture["result"]
+        metadata = capture.get("metadata", {})
+        reference = metadata.get("reference", {})
+        result_angles = _angles_by_name(result)
+        reference_angles = reference.get("angles", {}) if isinstance(reference, dict) else {}
         rows.append(
             {
                 "index": index,
+                "original_file": str(original_path.relative_to(export_dir)),
+                "mediapipe_file": str(annotated_path.relative_to(export_dir)),
+                "collector": metadata.get("collector", ""),
+                "subject_id": metadata.get("subject_id", ""),
+                "true_label": metadata.get("label", ""),
                 "captured_at": capture["captured_at"],
-                "posture": result.get("posture", ""),
+                "predicted_posture": result.get("posture", ""),
                 "score": "" if result.get("score") is None else result.get("score"),
                 "side": result.get("side", ""),
                 "view": result.get("view", ""),
                 "view_valid": result.get("view_valid", ""),
+                "ear_shoulder_hip_angle": _angle_value(result_angles, "ear_shoulder_hip"),
+                "shoulder_hip_knee_angle": _angle_value(result_angles, "shoulder_hip_knee"),
+                "hip_knee_ankle_angle": _angle_value(result_angles, "hip_knee_ankle"),
+                "ear_shoulder_hip_reference_delta": _reference_delta(
+                    result_angles,
+                    reference_angles,
+                    "ear_shoulder_hip",
+                ),
+                "shoulder_hip_knee_reference_delta": _reference_delta(
+                    result_angles,
+                    reference_angles,
+                    "shoulder_hip_knee",
+                ),
+                "hip_knee_ankle_reference_delta": _reference_delta(
+                    result_angles,
+                    reference_angles,
+                    "hip_knee_ankle",
+                ),
+                "notes": metadata.get("notes", ""),
             }
         )
 
     csv_path = export_dir / "capture_log.csv"
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(
-            f,
-            fieldnames=["index", "captured_at", "posture", "score", "side", "view", "view_valid"],
-        )
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()) if rows else [])
         writer.writeheader()
         writer.writerows(rows)
+    csv_path.rename(export_dir / "manifest.csv")
+
+    reference_payload = {
+        "exported_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "capture_count": len(captures),
+        "reference": captures[0].get("metadata", {}).get("reference", {}) if captures else {},
+    }
+    (export_dir / "reference.json").write_text(
+        json.dumps(reference_payload, indent=2),
+        encoding="utf-8",
+    )
 
     summary_path = export_dir / "summary.md"
     summary_path.write_text(
@@ -473,7 +589,12 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 "# SURF Webcam Capture Set",
                 "",
                 f"- Captures: {len(captures)}",
+                f"- Collector: {captures[0].get('metadata', {}).get('collector', '') if captures else ''}",
+                f"- Subject ID: {captures[0].get('metadata', {}).get('subject_id', '') if captures else ''}",
+                f"- True label: {captures[0].get('metadata', {}).get('label', '') if captures else ''}",
                 "- Each capture includes the original webcam frame and the MediaPipe-processed frame.",
+                "- `manifest.csv` contains collection labels and posture measurements for review.",
+                "- `reference.json` contains the green reference skeleton used during collection.",
                 "- This export is local-only and is not committed to Git.",
                 "",
             ]
@@ -484,6 +605,60 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
     zip_path = UPLOAD_ROOT / f"surf-webcam-captures-{token}.zip"
     _zip_directory(export_dir, zip_path)
     return zip_path
+
+
+def _angles_by_name(result: dict) -> dict:
+    angles = {}
+    for item in result.get("angles", []) or []:
+        if isinstance(item, dict) and item.get("name"):
+            angles[item["name"]] = item
+    return angles
+
+
+def _angle_value(angles: dict, name: str):
+    value = angles.get(name, {}).get("angle")
+    return "" if value is None else value
+
+
+def _reference_delta(result_angles: dict, reference_angles: dict, name: str):
+    result_value = _angle_value(result_angles, name)
+    reference_value = reference_angles.get(name) if isinstance(reference_angles, dict) else None
+    if result_value == "" or reference_value is None:
+        return ""
+    try:
+        return round(float(result_value) - float(reference_value), 1)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _annotated_with_reference(jpeg_bytes: bytes, reference: dict) -> bytes:
+    frame = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        return jpeg_bytes
+    _draw_reference_overlay(frame, reference)
+    return _encode_jpeg(frame)
+
+
+def _draw_reference_overlay(frame, reference: dict) -> None:
+    points = reference.get("points", {}) if isinstance(reference, dict) else {}
+    if not points:
+        return
+
+    h, w = frame.shape[:2]
+    px_points = []
+    for name in REFERENCE_POINT_NAMES:
+        point = points.get(name)
+        if not isinstance(point, dict):
+            return
+        px_points.append((int(float(point["x"]) * w), int(float(point["y"]) * h)))
+
+    green = (0, 180, 0)
+    white = (255, 255, 255)
+    for idx in range(len(px_points) - 1):
+        cv2.line(frame, px_points[idx], px_points[idx + 1], green, 2, cv2.LINE_AA)
+    for point in px_points:
+        cv2.circle(frame, point, 7, green, -1, cv2.LINE_AA)
+        cv2.circle(frame, point, 8, white, 1, cv2.LINE_AA)
 
 
 def _export_filename(index: int, display_name: str, fallback_suffix: str) -> str:
@@ -651,8 +826,9 @@ def _runtime_error_message() -> str:
 
 def main() -> None:
     port = int(os.environ.get("SURF_WEB_PORT", "5050"))
+    host = os.environ.get("SURF_WEB_HOST", "127.0.0.1")
     app.run(
-        host="127.0.0.1",
+        host=host,
         port=port,
         debug=False,
         threaded=True,

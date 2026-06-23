@@ -57,6 +57,7 @@ class PipelineContractTests(unittest.TestCase):
         self.assertTrue(result.view_valid)
         self.assertEqual("left", result.side)
         self.assertEqual(3, len(payload["angles"]))
+        self.assertEqual(["ear", "shoulder", "hip", "knee", "ankle"], [item["name"] for item in payload["keypoints"]])
         self.assertIsInstance(payload["score"], float)
 
 

@@ -24,6 +24,18 @@
         </div>
 
         <div id="webcamPanel" class="mode-panel active">
+          <label class="field-label" for="collectorInput">Collector</label>
+          <input id="collectorInput" class="text-input" type="text" autocomplete="name" placeholder="fengshuo">
+          <label class="field-label" for="subjectInput">Subject ID</label>
+          <input id="subjectInput" class="text-input" type="text" autocomplete="off" placeholder="subject_001">
+          <label class="field-label" for="postureLabel">True label</label>
+          <select id="postureLabel" class="select-input">
+            <option value="">Choose good/bad</option>
+            <option value="good">Good posture</option>
+            <option value="bad">Bad posture</option>
+          </select>
+          <label class="field-label" for="captureNotes">Notes</label>
+          <textarea id="captureNotes" class="textarea-input" rows="3" placeholder="Optional collection note"></textarea>
           <button id="startWebcam" class="primary-button" type="button">Start camera</button>
           <button id="stopWebcam" class="secondary-button" type="button">Stop</button>
           <button id="captureWebcamSet" class="secondary-button" type="button">Capture / Download</button>
@@ -71,12 +83,13 @@
           <div class="legend" aria-label="Overlay legend">
             <span><i class="legend-skeleton"></i>Skeleton</span>
             <span><i class="legend-keypoint"></i>Side points</span>
-            <span><i class="legend-reference"></i>Plumb line</span>
+            <span><i class="legend-reference"></i>Reference</span>
           </div>
         </div>
         <div class="frame">
           <img id="previewImage" alt="Annotated posture preview">
           <video id="previewVideo" controls muted playsinline></video>
+          <canvas id="referenceCanvas" aria-label="Editable reference skeleton"></canvas>
           <div id="emptyState" class="empty-state">Select an input mode</div>
         </div>
         <div id="analysisFooter" class="analysis-footer">
@@ -103,6 +116,14 @@
           <strong id="sideValue">-</strong>
         </div>
         <div id="angleList" class="angle-list"></div>
+        <div class="reference-controls" aria-label="Reference skeleton controls">
+          <button id="setReference" class="secondary-button" type="button">Set reference from current pose</button>
+          <button id="editReference" class="secondary-button" type="button">Edit reference</button>
+          <button id="toggleReference" class="secondary-button" type="button">Hide reference</button>
+          <button id="resetReference" class="secondary-button" type="button">Reset reference</button>
+          <div id="referenceStatus" class="inline-status">No reference set</div>
+        </div>
+        <div id="referenceDeltaList" class="angle-list"></div>
         <div id="adviceList" class="advice-list"></div>
       </aside>
     </main>

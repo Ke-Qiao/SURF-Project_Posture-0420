@@ -21,12 +21,36 @@ class WebAppContractTests(unittest.TestCase):
         web_app._WEBCAM_CAPTURE_ZIPS.clear()
         web_app._WEBCAM_CAPTURE_TOKEN = ""
 
-    def test_health_exposes_week_1_polish_version(self):
+    def capture_payload(self):
+        return {
+            "collector": "fengshuo",
+            "subject_id": "subject_001",
+            "label": "good",
+            "notes": "unit test",
+            "reference": {
+                "points": {
+                    "ear": {"x": 0.4, "y": 0.2},
+                    "shoulder": {"x": 0.42, "y": 0.35},
+                    "hip": {"x": 0.43, "y": 0.55},
+                    "knee": {"x": 0.44, "y": 0.75},
+                    "ankle": {"x": 0.45, "y": 0.92},
+                },
+                "angles": {
+                    "ear_shoulder_hip": 175.0,
+                    "shoulder_hip_knee": 178.0,
+                    "hip_knee_ankle": 176.0,
+                },
+                "source": "unit-test",
+                "updated_at": "2026-06-23T00:00:00Z",
+            },
+        }
+
+    def test_health_exposes_week_2_data_platform_version(self):
         response = self.client.get("/health")
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-01-webcam-capture-v1", response.json["version"])
+        self.assertEqual("week-02-data-platform-v1", response.json["version"])
 
     def test_load_video_returns_json_stream_url(self):
         response = self.client.post(
@@ -95,10 +119,25 @@ class WebAppContractTests(unittest.TestCase):
         self.assertIn("Batch export not found", response.json["error"])
 
     def test_webcam_capture_requires_latest_frame(self):
-        response = self.client.post("/api/webcam-capture")
+        response = self.client.post("/api/webcam-capture", json=self.capture_payload())
 
         self.assertEqual(409, response.status_code)
         self.assertIn("No webcam frame", response.json["error"])
+
+    def test_webcam_capture_rejects_missing_metadata(self):
+        response = self.client.post("/api/webcam-capture", json={})
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("collector", response.json["error"])
+
+    def test_webcam_capture_rejects_missing_reference(self):
+        payload = self.capture_payload()
+        payload["reference"] = {}
+
+        response = self.client.post("/api/webcam-capture", json=payload)
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("reference skeleton", response.json["error"])
 
     def test_webcam_capture_reaches_zip_download(self):
         web_app._WEBCAM_LATEST.update(
@@ -111,6 +150,11 @@ class WebAppContractTests(unittest.TestCase):
                     "side": "left",
                     "view": "side",
                     "view_valid": True,
+                    "angles": [
+                        {"name": "ear_shoulder_hip", "angle": 175.5},
+                        {"name": "shoulder_hip_knee", "angle": 178.0},
+                        {"name": "hip_knee_ankle", "angle": 176.0},
+                    ],
                 },
                 "stored_at": time.time(),
             }
@@ -118,7 +162,7 @@ class WebAppContractTests(unittest.TestCase):
 
         payload = None
         for _ in range(web_app.WEBCAM_CAPTURE_TARGET):
-            response = self.client.post("/api/webcam-capture")
+            response = self.client.post("/api/webcam-capture", json=self.capture_payload())
             self.assertEqual(200, response.status_code)
             payload = response.json
 
@@ -133,10 +177,16 @@ class WebAppContractTests(unittest.TestCase):
             names = set(exported.namelist())
             self.assertIn("original/01-original.jpg", names)
             self.assertIn("mediapipe/01-mediapipe.jpg", names)
-            self.assertIn("capture_log.csv", names)
+            self.assertIn("manifest.csv", names)
+            self.assertIn("reference.json", names)
             self.assertIn("summary.md", names)
             self.assertEqual(b"original", exported.read("original/01-original.jpg"))
             self.assertEqual(b"annotated", exported.read("mediapipe/01-mediapipe.jpg"))
+            manifest = exported.read("manifest.csv").decode("utf-8")
+            self.assertIn("collector,subject_id,true_label", manifest)
+            self.assertIn("fengshuo,subject_001,good", manifest)
+            reference_json = exported.read("reference.json").decode("utf-8")
+            self.assertIn('"source": "unit-test"', reference_json)
         download.close()
 
     def test_webcam_capture_rejects_stale_cached_frame(self):
@@ -149,7 +199,7 @@ class WebAppContractTests(unittest.TestCase):
             }
         )
 
-        response = self.client.post("/api/webcam-capture")
+        response = self.client.post("/api/webcam-capture", json=self.capture_payload())
 
         self.assertEqual(409, response.status_code)
         self.assertIn("stale", response.json["error"])

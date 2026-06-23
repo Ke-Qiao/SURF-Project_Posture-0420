@@ -5,12 +5,13 @@ PROJECT_DIR="${0:A:h}"
 cd "$PROJECT_DIR"
 
 PORT="${SURF_WEB_PORT:-5050}"
+HOST="${SURF_WEB_HOST:-127.0.0.1}"
 URL="http://127.0.0.1:${PORT}"
 PYTHON_BIN="$PROJECT_DIR/.venv/bin/python"
 
 echo "SURF Posture Web Demo"
 echo "Project: $PROJECT_DIR"
-echo "URL: $URL"
+echo "Local URL: $URL"
 echo
 
 pause_on_error() {
@@ -37,7 +38,7 @@ health_body() {
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-01-webcam-capture-v1"'* ]]
+  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-02-data-platform-v1"'* ]]
 }
 
 port_is_open() {
@@ -77,6 +78,21 @@ pick_available_url() {
   exit 1
 }
 
+lan_ip() {
+  "$PYTHON_BIN" - <<'PY'
+import socket
+
+sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+try:
+    sock.connect(("8.8.8.8", 80))
+    print(sock.getsockname()[0])
+except OSError:
+    print("")
+finally:
+    sock.close()
+PY
+}
+
 trap pause_on_error ERR
 
 if [[ ! -x "$PYTHON_BIN" ]]; then
@@ -107,7 +123,18 @@ fi
 pick_available_url
 
 echo "Starting server..."
-echo "URL: $URL"
+echo "Local URL: $URL"
+if [[ "$HOST" == "0.0.0.0" ]]; then
+  LAN_IP="$(lan_ip)"
+  if [[ -n "$LAN_IP" ]]; then
+    echo "Phone URL: http://${LAN_IP}:${PORT}"
+    echo "Use the same Wi-Fi network on the phone and computer."
+  else
+    echo "Phone URL: use this computer's LAN IP with port ${PORT}."
+  fi
+else
+  echo "Phone collection disabled. Start with SURF_WEB_HOST=0.0.0.0 for LAN access."
+fi
 echo "Leave this window open while presenting."
 echo "Press Ctrl+C to stop the demo."
 echo
@@ -116,4 +143,4 @@ if [[ "${SURF_NO_OPEN:-0}" != "1" ]]; then
   (sleep 2; /usr/bin/open "$URL" >/dev/null 2>&1 || true) &
 fi
 
-exec env SURF_WEB_PORT="$PORT" "$PYTHON_BIN" -m web.app
+exec env SURF_WEB_PORT="$PORT" SURF_WEB_HOST="$HOST" "$PYTHON_BIN" -m web.app

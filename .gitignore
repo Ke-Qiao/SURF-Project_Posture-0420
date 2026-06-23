@@ -6,3 +6,15 @@ experiments/photos/
 experiments/baseline-run/*.csv
 data/filtered/
 data/annotated/
+temp/
+week2_meeting.md
+*.zip
+*.pt
+*.pth
+*.onnx
+*.engine
+runs/
+weights/
+checkpoints/
+captures/
+exports/

@@ -17,11 +17,13 @@ const statusBadge = document.querySelector("#statusBadge");
 const modeLabel = document.querySelector("#modeLabel");
 const preview = document.querySelector("#previewImage");
 const previewVideo = document.querySelector("#previewVideo");
+const referenceCanvas = document.querySelector("#referenceCanvas");
 const emptyState = document.querySelector("#emptyState");
 const postureValue = document.querySelector("#postureValue");
 const scoreValue = document.querySelector("#scoreValue");
 const sideValue = document.querySelector("#sideValue");
 const angleList = document.querySelector("#angleList");
+const referenceDeltaList = document.querySelector("#referenceDeltaList");
 const adviceList = document.querySelector("#adviceList");
 const footerPosture = document.querySelector("#footerPosture");
 const footerMeta = document.querySelector("#footerMeta");
@@ -36,6 +38,23 @@ const downloadBatch = document.querySelector("#downloadBatch");
 const downloadEvidence = document.querySelector("#downloadEvidence");
 const captureWebcamButton = document.querySelector("#captureWebcamSet");
 const webcamCaptureStatus = document.querySelector("#webcamCaptureStatus");
+const collectorInput = document.querySelector("#collectorInput");
+const subjectInput = document.querySelector("#subjectInput");
+const postureLabel = document.querySelector("#postureLabel");
+const captureNotes = document.querySelector("#captureNotes");
+const setReferenceButton = document.querySelector("#setReference");
+const editReferenceButton = document.querySelector("#editReference");
+const toggleReferenceButton = document.querySelector("#toggleReference");
+const resetReferenceButton = document.querySelector("#resetReference");
+const referenceStatus = document.querySelector("#referenceStatus");
+const referenceCtx = referenceCanvas.getContext("2d");
+const referencePointNames = ["ear", "shoulder", "hip", "knee", "ankle"];
+const referenceAngleNames = [
+  ["ear_shoulder_hip", "Forward Head", "ear", "shoulder", "hip"],
+  ["shoulder_hip_knee", "Trunk Lean", "shoulder", "hip", "knee"],
+  ["hip_knee_ankle", "Knee", "hip", "knee", "ankle"],
+];
+const referenceStorageKey = "surfPostureReferenceSkeleton";
 let selectedMediaUrl = "";
 let activeStreamController = null;
 let activeMode = "webcam";
@@ -43,6 +62,10 @@ let latestResult = null;
 let latestFrameDataUrl = "";
 let latestSourceName = "";
 let webcamCaptureDownloadUrl = "";
+let referenceSkeleton = loadReferenceSkeleton();
+let referenceVisible = true;
+let referenceEditing = false;
+let draggingReferencePoint = "";
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
@@ -57,6 +80,18 @@ captureWebcamButton.addEventListener("click", captureWebcamSet);
 downloadEvidence.addEventListener("click", downloadCurrentEvidence);
 imageInput.addEventListener("change", previewSelectedImage);
 videoInput.addEventListener("change", previewSelectedVideo);
+setReferenceButton.addEventListener("click", setReferenceFromCurrentPose);
+editReferenceButton.addEventListener("click", toggleReferenceEditing);
+toggleReferenceButton.addEventListener("click", toggleReferenceVisibility);
+resetReferenceButton.addEventListener("click", resetReferenceSkeleton);
+referenceCanvas.addEventListener("pointerdown", startReferenceDrag);
+referenceCanvas.addEventListener("pointermove", dragReferencePoint);
+referenceCanvas.addEventListener("pointerup", stopReferenceDrag);
+referenceCanvas.addEventListener("pointercancel", stopReferenceDrag);
+preview.addEventListener("load", drawReferenceOverlay);
+previewVideo.addEventListener("loadedmetadata", drawReferenceOverlay);
+window.addEventListener("resize", drawReferenceOverlay);
+updateReferenceStatus();
 
 function setMode(mode) {
   activeMode = mode;
@@ -92,6 +127,7 @@ function stopPreview() {
   preview.classList.remove("active");
   previewVideo.classList.remove("active");
   emptyState.style.display = "block";
+  drawReferenceOverlay();
   setStatus("Ready");
 }
 
@@ -241,6 +277,7 @@ function showImage(url) {
   previewVideo.removeAttribute("src");
   previewVideo.classList.remove("active");
   emptyState.style.display = "none";
+  requestAnimationFrame(drawReferenceOverlay);
 }
 
 function showVideo(url) {
@@ -251,6 +288,7 @@ function showVideo(url) {
   previewVideo.src = url;
   previewVideo.classList.add("active");
   emptyState.style.display = "none";
+  requestAnimationFrame(drawReferenceOverlay);
 }
 
 function clearSelectedMediaUrl() {
@@ -276,6 +314,7 @@ function resetMetrics(message = "") {
   scoreValue.textContent = "-";
   sideValue.textContent = "-";
   angleList.innerHTML = "";
+  referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerPosture.className = "";
   footerPosture.textContent = message || "Waiting for input";
@@ -293,6 +332,7 @@ function showError(message) {
   scoreValue.textContent = "-";
   sideValue.textContent = "-";
   angleList.innerHTML = "";
+  referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerPosture.textContent = "Error";
   footerPosture.className = "error-text";
@@ -352,6 +392,13 @@ async function captureWebcamSet() {
     return;
   }
 
+  const metadata = collectionMetadata();
+  if (!metadata.ok) {
+    setStatus("Missing fields", "bad");
+    webcamCaptureStatus.textContent = metadata.error;
+    return;
+  }
+
   captureWebcamButton.disabled = true;
   try {
     for (let remaining = 3; remaining > 0; remaining -= 1) {
@@ -360,7 +407,11 @@ async function captureWebcamSet() {
       await delay(1000);
     }
 
-    const response = await fetch("/api/webcam-capture", { method: "POST" });
+    const response = await fetch("/api/webcam-capture", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(metadata.payload),
+    });
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.error || "Webcam capture failed.");
@@ -391,6 +442,7 @@ function renderMetrics(result) {
   scoreValue.textContent = result.detected && typeof result.score === "number" ? `${result.score}/100` : "-";
   sideValue.textContent = result.side || "-";
   angleList.innerHTML = "";
+  referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerAngles.innerHTML = "";
   footerAdvice.textContent = "";
@@ -399,6 +451,7 @@ function renderMetrics(result) {
     footerPosture.textContent = "No detection";
     footerPosture.className = "bad";
     footerMeta.textContent = "Score - / Side -";
+    renderReferenceDiffs(result);
     return;
   }
 
@@ -416,6 +469,7 @@ function renderMetrics(result) {
       item.textContent = adviceText;
       adviceList.appendChild(item);
     });
+    renderReferenceDiffs(result);
     return;
   }
 
@@ -441,6 +495,8 @@ function renderMetrics(result) {
     footerAngles.appendChild(footerItem);
   });
 
+  renderReferenceDiffs(result);
+
   footerAdvice.textContent = advice.slice(0, 2).join(" | ");
 
   advice.forEach((adviceText) => {
@@ -462,6 +518,7 @@ function renderBatchSummary(payload) {
   scoreValue.textContent = `${total} files`;
   sideValue.textContent = "ZIP ready";
   angleList.innerHTML = "";
+  referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerAngles.innerHTML = "";
   footerAdvice.textContent = "Rule-based auto suggestion; review edge cases manually.";
@@ -521,6 +578,36 @@ function updateWebcamCaptureUi(payload) {
   }
 }
 
+function collectionMetadata() {
+  const collector = collectorInput.value.trim();
+  const subjectId = subjectInput.value.trim();
+  const label = postureLabel.value.trim();
+
+  if (!collector) {
+    return {ok: false, error: "Collector is required."};
+  }
+  if (!subjectId) {
+    return {ok: false, error: "Subject ID is required."};
+  }
+  if (!label) {
+    return {ok: false, error: "Choose good or bad posture."};
+  }
+  if (!referenceComplete(referenceSkeleton)) {
+    return {ok: false, error: "Set a green reference skeleton first."};
+  }
+
+  return {
+    ok: true,
+    payload: {
+      collector,
+      subject_id: subjectId,
+      label,
+      notes: captureNotes.value.trim(),
+      reference: referenceSkeleton,
+    },
+  };
+}
+
 async function resetWebcamCaptureSet() {
   webcamCaptureDownloadUrl = "";
   captureWebcamButton.textContent = "Capture / Download";
@@ -530,6 +617,313 @@ async function resetWebcamCaptureSet() {
   } catch (error) {
     setStatus("Reset skipped", "bad");
   }
+}
+
+function setReferenceFromCurrentPose() {
+  const keypoints = latestResult && Array.isArray(latestResult.keypoints) ? latestResult.keypoints : [];
+  if (!latestResult || !latestResult.detected || latestResult.view_valid === false || keypoints.length < 5) {
+    setStatus("No side pose", "bad");
+    referenceStatus.textContent = "Use a detected side-view pose first.";
+    return;
+  }
+
+  const points = {};
+  keypoints.forEach((point) => {
+    if (referencePointNames.includes(point.name)) {
+      points[point.name] = {x: point.x, y: point.y};
+    }
+  });
+
+  if (!referenceComplete({points})) {
+    setStatus("Reference failed", "bad");
+    referenceStatus.textContent = "Current pose is missing required points.";
+    return;
+  }
+
+  referenceSkeleton = {
+    points,
+    angles: calculateReferenceAngles(points),
+    source: "current-pose",
+    updated_at: new Date().toISOString(),
+  };
+  saveReferenceSkeleton();
+  referenceVisible = true;
+  referenceEditing = false;
+  updateReferenceStatus();
+  renderReferenceDiffs(latestResult);
+  drawReferenceOverlay();
+  setStatus("Reference set", "good");
+}
+
+function toggleReferenceEditing() {
+  if (!referenceComplete(referenceSkeleton)) {
+    setStatus("No reference", "bad");
+    referenceStatus.textContent = "Set a reference before editing.";
+    return;
+  }
+  referenceEditing = !referenceEditing;
+  referenceVisible = true;
+  updateReferenceStatus();
+  drawReferenceOverlay();
+}
+
+function toggleReferenceVisibility() {
+  referenceVisible = !referenceVisible;
+  updateReferenceStatus();
+  drawReferenceOverlay();
+}
+
+function resetReferenceSkeleton() {
+  referenceSkeleton = null;
+  referenceEditing = false;
+  draggingReferencePoint = "";
+  localStorage.removeItem(referenceStorageKey);
+  updateReferenceStatus();
+  renderReferenceDiffs(latestResult);
+  drawReferenceOverlay();
+  setStatus("Reference reset");
+}
+
+function loadReferenceSkeleton() {
+  try {
+    const raw = localStorage.getItem(referenceStorageKey);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw);
+    if (!referenceComplete(parsed)) {
+      return null;
+    }
+    parsed.angles = parsed.angles || calculateReferenceAngles(parsed.points);
+    return parsed;
+  } catch (error) {
+    return null;
+  }
+}
+
+function saveReferenceSkeleton() {
+  if (referenceComplete(referenceSkeleton)) {
+    localStorage.setItem(referenceStorageKey, JSON.stringify(referenceSkeleton));
+  }
+}
+
+function referenceComplete(reference) {
+  const points = reference && reference.points ? reference.points : {};
+  return referencePointNames.every((name) => {
+    const point = points[name];
+    return point && Number.isFinite(point.x) && Number.isFinite(point.y);
+  });
+}
+
+function updateReferenceStatus() {
+  const hasReference = referenceComplete(referenceSkeleton);
+  referenceStatus.textContent = hasReference
+    ? `Reference ${referenceEditing ? "editing" : "ready"}`
+    : "No reference set";
+  editReferenceButton.textContent = referenceEditing ? "Finish editing" : "Edit reference";
+  toggleReferenceButton.textContent = referenceVisible ? "Hide reference" : "Show reference";
+  referenceCanvas.classList.toggle("editing", referenceEditing && hasReference && referenceVisible);
+}
+
+function drawReferenceOverlay() {
+  const rect = referenceCanvas.getBoundingClientRect();
+  const width = Math.max(1, Math.round(rect.width));
+  const height = Math.max(1, Math.round(rect.height));
+  if (referenceCanvas.width !== width || referenceCanvas.height !== height) {
+    referenceCanvas.width = width;
+    referenceCanvas.height = height;
+  }
+  referenceCtx.clearRect(0, 0, referenceCanvas.width, referenceCanvas.height);
+
+  if (!referenceVisible || !referenceComplete(referenceSkeleton)) {
+    return;
+  }
+
+  const mediaBox = currentMediaBox();
+  const points = referencePointNames.map((name) => normalizedToCanvas(referenceSkeleton.points[name], mediaBox));
+
+  referenceCtx.lineWidth = 3;
+  referenceCtx.strokeStyle = "#22a447";
+  referenceCtx.fillStyle = "#22a447";
+  referenceCtx.beginPath();
+  points.forEach((point, index) => {
+    if (index === 0) {
+      referenceCtx.moveTo(point.x, point.y);
+    } else {
+      referenceCtx.lineTo(point.x, point.y);
+    }
+  });
+  referenceCtx.stroke();
+
+  points.forEach((point, index) => {
+    referenceCtx.beginPath();
+    referenceCtx.arc(point.x, point.y, referenceEditing ? 9 : 6, 0, Math.PI * 2);
+    referenceCtx.fill();
+    referenceCtx.lineWidth = 2;
+    referenceCtx.strokeStyle = "#ffffff";
+    referenceCtx.stroke();
+    if (referenceEditing) {
+      referenceCtx.fillStyle = "#ffffff";
+      referenceCtx.font = "12px system-ui, sans-serif";
+      referenceCtx.fillText(referencePointNames[index], point.x + 11, point.y - 8);
+      referenceCtx.fillStyle = "#22a447";
+    }
+  });
+}
+
+function currentMediaBox() {
+  const canvasRect = referenceCanvas.getBoundingClientRect();
+  const media = preview.classList.contains("active") ? preview : previewVideo.classList.contains("active") ? previewVideo : null;
+  const mediaWidth = media === preview ? preview.naturalWidth : previewVideo.videoWidth;
+  const mediaHeight = media === preview ? preview.naturalHeight : previewVideo.videoHeight;
+  if (!media || !mediaWidth || !mediaHeight) {
+    return {x: 0, y: 0, width: canvasRect.width, height: canvasRect.height};
+  }
+  const scale = Math.min(canvasRect.width / mediaWidth, canvasRect.height / mediaHeight);
+  const width = mediaWidth * scale;
+  const height = mediaHeight * scale;
+  return {
+    x: (canvasRect.width - width) / 2,
+    y: (canvasRect.height - height) / 2,
+    width,
+    height,
+  };
+}
+
+function normalizedToCanvas(point, mediaBox) {
+  return {
+    x: mediaBox.x + point.x * mediaBox.width,
+    y: mediaBox.y + point.y * mediaBox.height,
+  };
+}
+
+function canvasToNormalized(x, y, mediaBox) {
+  return {
+    x: clamp((x - mediaBox.x) / mediaBox.width, 0, 1),
+    y: clamp((y - mediaBox.y) / mediaBox.height, 0, 1),
+  };
+}
+
+function startReferenceDrag(event) {
+  if (!referenceEditing || !referenceComplete(referenceSkeleton)) {
+    return;
+  }
+  const point = nearestReferencePoint(event);
+  if (!point) {
+    return;
+  }
+  draggingReferencePoint = point;
+  referenceCanvas.classList.add("dragging");
+  referenceCanvas.setPointerCapture(event.pointerId);
+  event.preventDefault();
+}
+
+function dragReferencePoint(event) {
+  if (!draggingReferencePoint || !referenceComplete(referenceSkeleton)) {
+    return;
+  }
+  const rect = referenceCanvas.getBoundingClientRect();
+  const mediaBox = currentMediaBox();
+  referenceSkeleton.points[draggingReferencePoint] = canvasToNormalized(
+    event.clientX - rect.left,
+    event.clientY - rect.top,
+    mediaBox,
+  );
+  referenceSkeleton.angles = calculateReferenceAngles(referenceSkeleton.points);
+  referenceSkeleton.updated_at = new Date().toISOString();
+  saveReferenceSkeleton();
+  renderReferenceDiffs(latestResult);
+  drawReferenceOverlay();
+}
+
+function stopReferenceDrag(event) {
+  if (draggingReferencePoint && event.pointerId !== undefined) {
+    try {
+      referenceCanvas.releasePointerCapture(event.pointerId);
+    } catch (error) {
+      // Pointer capture may already be released by the browser.
+    }
+  }
+  draggingReferencePoint = "";
+  referenceCanvas.classList.remove("dragging");
+}
+
+function nearestReferencePoint(event) {
+  const rect = referenceCanvas.getBoundingClientRect();
+  const mediaBox = currentMediaBox();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  let nearest = "";
+  let nearestDistance = Infinity;
+  referencePointNames.forEach((name) => {
+    const point = normalizedToCanvas(referenceSkeleton.points[name], mediaBox);
+    const distance = Math.hypot(point.x - x, point.y - y);
+    if (distance < nearestDistance) {
+      nearest = name;
+      nearestDistance = distance;
+    }
+  });
+  return nearestDistance <= 24 ? nearest : "";
+}
+
+function renderReferenceDiffs(result) {
+  referenceDeltaList.innerHTML = "";
+  if (!referenceComplete(referenceSkeleton)) {
+    return;
+  }
+  referenceSkeleton.angles = referenceSkeleton.angles || calculateReferenceAngles(referenceSkeleton.points);
+
+  const resultAngles = {};
+  (result && result.angles ? result.angles : []).forEach((angle) => {
+    resultAngles[angle.name] = angle.angle;
+  });
+
+  referenceAngleNames.forEach(([name, label]) => {
+    const referenceAngle = referenceSkeleton.angles[name];
+    const resultAngle = resultAngles[name];
+    const item = document.createElement("div");
+    item.className = "angle-item good";
+    const deltaText = Number.isFinite(resultAngle)
+      ? `${(resultAngle - referenceAngle).toFixed(1)} deg`
+      : "-";
+    item.innerHTML = `
+      <div class="angle-title">
+        <span>${label} ref diff</span>
+        <span>${deltaText}</span>
+      </div>
+      <div class="angle-detail">Reference ${referenceAngle.toFixed(1)} deg</div>
+    `;
+    referenceDeltaList.appendChild(item);
+  });
+}
+
+function calculateReferenceAngles(points) {
+  return {
+    ear_shoulder_hip: roundAngle(angleAt(points.ear, points.shoulder, points.hip)),
+    shoulder_hip_knee: roundAngle(angleAt(points.shoulder, points.hip, points.knee)),
+    hip_knee_ankle: roundAngle(angleAt(points.hip, points.knee, points.ankle)),
+  };
+}
+
+function angleAt(a, b, c) {
+  const ba = {x: a.x - b.x, y: a.y - b.y};
+  const bc = {x: c.x - b.x, y: c.y - b.y};
+  const dot = ba.x * bc.x + ba.y * bc.y;
+  const magA = Math.hypot(ba.x, ba.y);
+  const magC = Math.hypot(bc.x, bc.y);
+  if (!magA || !magC) {
+    return 0;
+  }
+  const cos = clamp(dot / (magA * magC), -1, 1);
+  return Math.acos(cos) * 180 / Math.PI;
+}
+
+function roundAngle(value) {
+  return Math.round(value * 10) / 10;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
 }
 
 function delay(ms) {
@@ -552,6 +946,7 @@ function downloadCurrentEvidence() {
     mode: activeMode,
     source: latestSourceName || activeMode,
     result: latestResult,
+    reference: referenceSkeleton,
     preview_image: latestFrameDataUrl,
   };
   const text = JSON.stringify(evidence, null, 2);

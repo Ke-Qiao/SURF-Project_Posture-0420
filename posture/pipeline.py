@@ -28,6 +28,7 @@ def annotate_frame(
 
 def result_to_dict(result: PostureResult) -> Dict[str, Any]:
     """Convert a posture result into JSON-friendly data for the web UI."""
+    keypoint_names = ["ear", "shoulder", "hip", "knee", "ankle"]
     return {
         "detected": result.detected,
         "side": result.side,
@@ -47,6 +48,10 @@ def result_to_dict(result: PostureResult) -> Dict[str, Any]:
         ),
         "issues": list(result.issues),
         "advice": list(result.advice),
+        "keypoints": [
+            {"name": name, "x": round(x, 6), "y": round(y, 6)}
+            for name, (x, y) in zip(keypoint_names, result.keypoint_coords)
+        ],
         "angles": [
             {
                 "name": angle.name,
