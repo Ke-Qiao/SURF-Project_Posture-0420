@@ -35,19 +35,32 @@ def result_to_dict(result: PostureResult) -> Dict[str, Any]:
         "view": result.view,
         "view_valid": result.view_valid,
         "message": result.message,
-        "score": result.score if result.view_valid else None,
+        "score": result.score if result.view_valid and result.profile_complete else None,
         "overall_good": result.overall_good,
         "posture": (
             "No detection"
             if not result.detected
             else "Side view required"
             if not result.view_valid
+            else "Incomplete profile"
+            if not result.profile_complete
             else "Good"
             if result.overall_good
             else "Bad"
         ),
         "issues": list(result.issues),
         "advice": list(result.advice),
+        "profile_complete": result.profile_complete,
+        "missing_profile_parts": list(result.missing_profile_parts),
+        "profile_parts": [
+            {
+                "name": part.name,
+                "visible": part.visible,
+                "visibility": part.visibility,
+                "proxy": part.proxy,
+            }
+            for part in result.profile_parts
+        ],
         "keypoints": [
             {"name": name, "x": round(x, 6), "y": round(y, 6)}
             for name, (x, y) in zip(keypoint_names, result.keypoint_coords)

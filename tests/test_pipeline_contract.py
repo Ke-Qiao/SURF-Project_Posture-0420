@@ -58,7 +58,36 @@ class PipelineContractTests(unittest.TestCase):
         self.assertEqual("left", result.side)
         self.assertEqual(3, len(payload["angles"]))
         self.assertEqual(["ear", "shoulder", "hip", "knee", "ankle"], [item["name"] for item in payload["keypoints"]])
+        self.assertTrue(payload["profile_complete"])
+        self.assertEqual([], payload["missing_profile_parts"])
         self.assertIsInstance(payload["score"], float)
+
+    def test_missing_required_profile_part_blocks_scoring(self):
+        landmarks = _blank_landmarks()
+        for idx, x, y, visibility in [
+            (7, 0.51, 0.26, 0.98),
+            (8, 0.52, 0.26, 0.20),
+            (11, 0.50, 0.44, 0.98),
+            (12, 0.51, 0.44, 0.20),
+            (23, 0.50, 0.66, 0.98),
+            (24, 0.51, 0.66, 0.20),
+            (25, 0.50, 0.84, 0.98),
+            (26, 0.51, 0.84, 0.20),
+            (27, 0.50, 0.98, 0.10),
+            (28, 0.51, 0.98, 0.20),
+        ]:
+            landmarks[idx] = _landmark(x, y, visibility)
+
+        result = analyze_posture(landmarks)
+        payload = result_to_dict(result)
+
+        self.assertTrue(result.detected)
+        self.assertEqual("side", result.view)
+        self.assertFalse(payload["profile_complete"])
+        self.assertEqual("Incomplete profile", payload["posture"])
+        self.assertIn("Ankle", payload["missing_profile_parts"])
+        self.assertEqual([], payload["angles"])
+        self.assertIsNone(payload["score"])
 
 
 if __name__ == "__main__":

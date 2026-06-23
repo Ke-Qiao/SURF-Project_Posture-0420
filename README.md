@@ -9,6 +9,8 @@ project. The current scope is side-view standing posture only.
 - Runs the extended detector through `main.py`.
 - Provides a local web app for image, video, webcam, and batch review.
 - Uses webcam mode to collect labeled side-view posture photos.
+- Checks whether the teacher-required side-profile body parts are visible
+  before saving webcam captures.
 - Exports local ZIP files for teacher review before data enters GitHub.
 
 The app does not train a model in the Week 2 platform step.
@@ -50,11 +52,22 @@ http://<computer-lan-ip>:5050
 4. Click `Set reference from current pose` on a good side-view frame.
 5. Use `Edit reference` to drag the green ear, shoulder, hip, knee, and ankle
    points if needed.
-6. Click `Capture / Download`; each click waits 3 seconds and captures one
+6. Confirm the profile checklist shows the required body parts as visible.
+7. Click `Capture / Download`; each click waits 3 seconds and captures one
    frame.
-7. After 10 captures, download the ZIP.
-8. Send the ZIP or extracted images to the teacher for review before uploading
+8. After 10 captures, download the ZIP.
+9. Send the ZIP or extracted images to the teacher for review before uploading
    approved data to GitHub.
+
+The profile checklist follows the teacher's latest requirement:
+
+```text
+Head, Neck, Shoulder, Hip, Buttock, Knees, Ankle
+```
+
+MediaPipe does not provide explicit neck or buttock landmarks. The app checks
+`Neck` through the visible ear-shoulder segment and `Buttock` through the hip
+landmark proxy.
 
 The export contains:
 

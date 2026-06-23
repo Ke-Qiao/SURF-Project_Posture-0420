@@ -45,12 +45,12 @@ class WebAppContractTests(unittest.TestCase):
             },
         }
 
-    def test_health_exposes_week_2_data_platform_version(self):
+    def test_health_exposes_week_2_profile_gate_version(self):
         response = self.client.get("/health")
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-02-data-platform-v1", response.json["version"])
+        self.assertEqual("week-02-profile-gate-v1", response.json["version"])
 
     def test_load_video_returns_json_stream_url(self):
         response = self.client.post(
@@ -139,6 +139,30 @@ class WebAppContractTests(unittest.TestCase):
         self.assertEqual(400, response.status_code)
         self.assertIn("reference skeleton", response.json["error"])
 
+    def test_webcam_capture_rejects_incomplete_profile(self):
+        web_app._WEBCAM_LATEST.update(
+            {
+                "original_jpeg": b"original",
+                "annotated_jpeg": b"annotated",
+                "result": {
+                    "posture": "Incomplete profile",
+                    "score": None,
+                    "side": "left",
+                    "view": "side",
+                    "view_valid": True,
+                    "profile_complete": False,
+                    "missing_profile_parts": ["Ankle"],
+                    "angles": [],
+                },
+                "stored_at": time.time(),
+            }
+        )
+
+        response = self.client.post("/api/webcam-capture", json=self.capture_payload())
+
+        self.assertEqual(409, response.status_code)
+        self.assertIn("Ankle", response.json["error"])
+
     def test_webcam_capture_reaches_zip_download(self):
         web_app._WEBCAM_LATEST.update(
             {
@@ -150,6 +174,8 @@ class WebAppContractTests(unittest.TestCase):
                     "side": "left",
                     "view": "side",
                     "view_valid": True,
+                    "profile_complete": True,
+                    "missing_profile_parts": [],
                     "angles": [
                         {"name": "ear_shoulder_hip", "angle": 175.5},
                         {"name": "shoulder_hip_knee", "angle": 178.0},

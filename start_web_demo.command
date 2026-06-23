@@ -38,7 +38,7 @@ health_body() {
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-02-data-platform-v1"'* ]]
+  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-02-profile-gate-v1"'* ]]
 }
 
 port_is_open() {

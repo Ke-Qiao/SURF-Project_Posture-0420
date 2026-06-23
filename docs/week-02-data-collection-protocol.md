@@ -8,6 +8,7 @@
 
 - 使用手机或相机，优先使用三脚架或稳定支撑。
 - 拍摄对象侧身站立，身体从头到脚完整可见。
+- 必须能看到 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle。
 - 背景尽量干净，光线充足。
 - 衣服应能看清肩、髋、膝、踝的大致轮廓。
 - 相机保持水平，不要俯拍或仰拍过度。
@@ -18,7 +19,7 @@
 - 侧视图。
 - 全身站姿。
 - 单人。
-- 耳朵、肩膀、髋部、膝盖、脚踝尽量可见。
+- Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 尽量可见。
 - 姿势稳定，不在走路或运动中。
 
 ## 无效图片
@@ -41,8 +42,19 @@
 4. 让 subject 站成清楚侧视。
 5. 点击 `Set reference from current pose` 设置绿色参考骨架。
 6. 必要时点击 `Edit reference`，拖动 ear、shoulder、hip、knee、ankle。
-7. 点击 `Capture / Download`，每次等待 3 秒采集一张。
-8. 满 10 张后下载 ZIP。
+7. 检查右侧 profile checklist：
+   - Head
+   - Neck
+   - Shoulder
+   - Hip
+   - Buttock
+   - Knees
+   - Ankle
+8. 如果任意部位显示 missing，重新调整相机或被拍摄者位置。
+9. 点击 `Capture / Download`，每次等待 3 秒采集一张。
+10. 满 10 张后下载 ZIP。
+
+说明：MediaPipe 没有显式 neck 和 buttock 点。平台中 `Neck` 使用 ear-shoulder 段作为代理，`Buttock` 使用 hip 点作为代理。
 
 ## 审核流程
 

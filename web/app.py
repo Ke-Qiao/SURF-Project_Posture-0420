@@ -40,7 +40,7 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-02-data-platform-v1"
+APP_VERSION = "week-02-profile-gate-v1"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")
@@ -95,6 +95,11 @@ def webcam_capture():
         latest_age = time.time() - float(_WEBCAM_LATEST.get("stored_at", 0))
         if latest_age > WEBCAM_LATEST_MAX_AGE_SECONDS:
             return _json_error("Webcam frame is stale. Restart camera before capture.", 409)
+
+        latest_result = _WEBCAM_LATEST["result"]
+        if not latest_result.get("profile_complete", False):
+            missing = ", ".join(latest_result.get("missing_profile_parts") or ["required body profile"])
+            return _json_error(f"Incomplete side profile. Missing: {missing}.", 409)
 
         if len(_WEBCAM_CAPTURES) >= WEBCAM_CAPTURE_TARGET:
             return jsonify(_webcam_capture_payload(ready=True))
@@ -543,6 +548,8 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 "side": result.get("side", ""),
                 "view": result.get("view", ""),
                 "view_valid": result.get("view_valid", ""),
+                "profile_complete": result.get("profile_complete", ""),
+                "missing_profile_parts": ";".join(result.get("missing_profile_parts", []) or []),
                 "ear_shoulder_hip_angle": _angle_value(result_angles, "ear_shoulder_hip"),
                 "shoulder_hip_knee_angle": _angle_value(result_angles, "shoulder_hip_knee"),
                 "hip_knee_ankle_angle": _angle_value(result_angles, "hip_knee_ankle"),

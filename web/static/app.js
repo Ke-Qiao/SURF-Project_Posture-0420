@@ -23,6 +23,7 @@ const postureValue = document.querySelector("#postureValue");
 const scoreValue = document.querySelector("#scoreValue");
 const sideValue = document.querySelector("#sideValue");
 const angleList = document.querySelector("#angleList");
+const profilePartList = document.querySelector("#profilePartList");
 const referenceDeltaList = document.querySelector("#referenceDeltaList");
 const adviceList = document.querySelector("#adviceList");
 const footerPosture = document.querySelector("#footerPosture");
@@ -314,6 +315,7 @@ function resetMetrics(message = "") {
   scoreValue.textContent = "-";
   sideValue.textContent = "-";
   angleList.innerHTML = "";
+  profilePartList.innerHTML = "";
   referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerPosture.className = "";
@@ -332,6 +334,7 @@ function showError(message) {
   scoreValue.textContent = "-";
   sideValue.textContent = "-";
   angleList.innerHTML = "";
+  profilePartList.innerHTML = "";
   referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerPosture.textContent = "Error";
@@ -442,6 +445,7 @@ function renderMetrics(result) {
   scoreValue.textContent = result.detected && typeof result.score === "number" ? `${result.score}/100` : "-";
   sideValue.textContent = result.side || "-";
   angleList.innerHTML = "";
+  profilePartList.innerHTML = "";
   referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerAngles.innerHTML = "";
@@ -451,6 +455,7 @@ function renderMetrics(result) {
     footerPosture.textContent = "No detection";
     footerPosture.className = "bad";
     footerMeta.textContent = "Score - / Side -";
+    renderProfileParts(result);
     renderReferenceDiffs(result);
     return;
   }
@@ -469,6 +474,20 @@ function renderMetrics(result) {
       item.textContent = adviceText;
       adviceList.appendChild(item);
     });
+    renderProfileParts(result);
+    renderReferenceDiffs(result);
+    return;
+  }
+
+  if (result.profile_complete === false) {
+    postureValue.textContent = "Incomplete profile";
+    scoreValue.textContent = "-";
+    sideValue.textContent = result.side || "-";
+    footerPosture.textContent = "Incomplete side profile";
+    footerPosture.className = "bad";
+    footerMeta.textContent = `Missing: ${missingProfileText(result)}`;
+    footerAdvice.textContent = "Retake with the full side profile visible.";
+    renderProfileParts(result);
     renderReferenceDiffs(result);
     return;
   }
@@ -495,6 +514,7 @@ function renderMetrics(result) {
     footerAngles.appendChild(footerItem);
   });
 
+  renderProfileParts(result);
   renderReferenceDiffs(result);
 
   footerAdvice.textContent = advice.slice(0, 2).join(" | ");
@@ -518,6 +538,7 @@ function renderBatchSummary(payload) {
   scoreValue.textContent = `${total} files`;
   sideValue.textContent = "ZIP ready";
   angleList.innerHTML = "";
+  profilePartList.innerHTML = "";
   referenceDeltaList.innerHTML = "";
   adviceList.innerHTML = "";
   footerAngles.innerHTML = "";
@@ -595,6 +616,9 @@ function collectionMetadata() {
   if (!referenceComplete(referenceSkeleton)) {
     return {ok: false, error: "Set a green reference skeleton first."};
   }
+  if (!latestResult || latestResult.profile_complete === false) {
+    return {ok: false, error: `Missing profile parts: ${missingProfileText(latestResult)}`};
+  }
 
   return {
     ok: true,
@@ -617,6 +641,34 @@ async function resetWebcamCaptureSet() {
   } catch (error) {
     setStatus("Reset skipped", "bad");
   }
+}
+
+function renderProfileParts(result) {
+  profilePartList.innerHTML = "";
+  const parts = result && Array.isArray(result.profile_parts) ? result.profile_parts : [];
+  if (!parts.length) {
+    return;
+  }
+
+  parts.forEach((part) => {
+    const item = document.createElement("div");
+    item.className = `angle-item ${part.visible ? "good" : "bad"}`;
+    item.innerHTML = `
+      <div class="angle-title">
+        <span>${part.name}</span>
+        <span>${part.visible ? "visible" : "missing"}</span>
+      </div>
+      <div class="angle-detail">Proxy ${part.proxy} / visibility ${part.visibility}</div>
+    `;
+    profilePartList.appendChild(item);
+  });
+}
+
+function missingProfileText(result) {
+  const missing = result && Array.isArray(result.missing_profile_parts)
+    ? result.missing_profile_parts
+    : [];
+  return missing.length ? missing.join(", ") : "required body profile";
 }
 
 function setReferenceFromCurrentPose() {

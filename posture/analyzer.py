@@ -14,6 +14,7 @@ from typing import List, Tuple
 
 from posture.config import (
     LEFT_SIDE_IDS,
+    PROFILE_VISIBILITY_THRESHOLD,
     RIGHT_SIDE_IDS,
     SCORE_WEIGHTS,
     THRESHOLDS,
@@ -38,6 +39,16 @@ class AngleResult:
 
 
 @dataclass
+class ProfilePartResult:
+    """Collection-quality check for one required side-profile body part."""
+
+    name: str
+    visible: bool
+    visibility: float
+    proxy: str
+
+
+@dataclass
 class PostureResult:
     """Complete posture-analysis output."""
 
@@ -52,6 +63,9 @@ class PostureResult:
     issues: List[str] = field(default_factory=list)
     advice: List[str] = field(default_factory=list)
     keypoint_coords: List[Tuple[float, float]] = field(default_factory=list)
+    profile_complete: bool = False
+    missing_profile_parts: List[str] = field(default_factory=list)
+    profile_parts: List[ProfilePartResult] = field(default_factory=list)
 
 
 # ======================================================================
@@ -146,6 +160,44 @@ def calc_angle(a, b, c) -> float:
     return math.degrees(math.acos(cos_angle))
 
 
+def check_profile_parts(landmarks, side_ids: dict) -> Tuple[bool, List[str], List[ProfilePartResult]]:
+    """Check whether teacher-required side-profile parts are visible.
+
+    MediaPipe Pose has no explicit neck or buttock landmark. For collection
+    gating, ``Neck`` is represented by the visible ear-shoulder segment and
+    ``Buttock`` is represented by the visible hip landmark. This keeps the
+    quality gate aligned with the teacher's anatomical checklist while staying
+    inside the available landmark set.
+    """
+    ear = landmarks[side_ids["ear"]]
+    shoulder = landmarks[side_ids["shoulder"]]
+    hip = landmarks[side_ids["hip"]]
+    knee = landmarks[side_ids["knee"]]
+    ankle = landmarks[side_ids["ankle"]]
+
+    checks = [
+        ("Head", ear.visibility, "ear"),
+        ("Neck", min(ear.visibility, shoulder.visibility), "ear-shoulder segment"),
+        ("Shoulder", shoulder.visibility, "shoulder"),
+        ("Hip", hip.visibility, "hip"),
+        ("Buttock", hip.visibility, "hip proxy"),
+        ("Knees", knee.visibility, "knee"),
+        ("Ankle", ankle.visibility, "ankle"),
+    ]
+
+    parts = [
+        ProfilePartResult(
+            name=name,
+            visible=visibility >= PROFILE_VISIBILITY_THRESHOLD,
+            visibility=round(float(visibility), 3),
+            proxy=proxy,
+        )
+        for name, visibility, proxy in checks
+    ]
+    missing = [part.name for part in parts if not part.visible]
+    return not missing, missing, parts
+
+
 def analyze_posture(landmarks) -> PostureResult:
     """Run the full posture-analysis pipeline.
 
@@ -191,6 +243,16 @@ def analyze_posture(landmarks) -> PostureResult:
         (knee.x, knee.y),
         (ankle.x, ankle.y),
     ]
+
+    profile_complete, missing_profile_parts, profile_parts = check_profile_parts(landmarks, side_ids)
+    result.profile_complete = profile_complete
+    result.missing_profile_parts = missing_profile_parts
+    result.profile_parts = profile_parts
+    if not profile_complete:
+        result.overall_good = False
+        result.message = "Missing required side-profile parts: " + ", ".join(missing_profile_parts)
+        result.advice.append("Retake the photo with head, neck, shoulder, hip, buttock, knees, and ankle visible")
+        return result
 
     # ---- 3. angles ----
     angle_triplets = [

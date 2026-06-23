@@ -19,9 +19,10 @@ git diff --check
 
 ## Web 检查
 
-- `/health` 返回 `week-02-data-platform-v1`。
+- `/health` 返回 `week-02-profile-gate-v1`。
 - image、video、webcam、batch 四种模式仍可切换。
 - Webcam 采集缺少 collector、subject、label 或 reference 时会拒绝。
+- Webcam 采集缺少 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 任一项时会拒绝。
 - `Set reference from current pose` 能生成绿色参考骨架。
 - `Edit reference` 可以拖动 5 个参考点。
 - 刷新页面后 reference 可以恢复。
@@ -36,6 +37,7 @@ git diff --check
 ## 数据检查
 
 - `manifest.csv` 包含 collector、subject_id、true_label。
+- `manifest.csv` 包含 profile_complete 和 missing_profile_parts。
 - subject_id 不使用真实姓名。
 - 图片必须先给老师审核。
 - 只有审核通过的 clean side-view standing data 才上传 GitHub。

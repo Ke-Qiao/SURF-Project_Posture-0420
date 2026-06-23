@@ -38,6 +38,14 @@ VIEW_GATE = {
 }
 
 # ---------------------------------------------------------------------------
+# Data-collection profile quality gate.
+# MediaPipe Pose does not expose explicit neck or buttock landmarks, so those
+# are checked through side-profile proxy landmarks documented in analyzer.py.
+# ---------------------------------------------------------------------------
+
+PROFILE_VISIBILITY_THRESHOLD = 0.45
+
+# ---------------------------------------------------------------------------
 # Angle deviation thresholds (degrees away from 180°)
 # Decision #2: start with experience-based values; interface preserved for
 # future data-driven tuning.

@@ -87,6 +87,29 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
             )
         return
 
+    if not result.profile_complete:
+        if show_text:
+            cv2.putText(
+                frame,
+                "Incomplete side profile",
+                (30, 40),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.9,
+                COLOR_WARNING,
+                2,
+            )
+            if result.missing_profile_parts:
+                cv2.putText(
+                    frame,
+                    "Missing: " + ", ".join(result.missing_profile_parts[:4]),
+                    (30, 70),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.55,
+                    COLOR_WARNING,
+                    1,
+                )
+        return
+
     # -- keypoints & alignment line -----------------------------------
     if result.keypoint_coords:
         px_pts = [(int(x * w), int(y * h)) for x, y in result.keypoint_coords]
@@ -213,6 +236,19 @@ def append_analysis_footer(frame, result: PostureResult):
         _put_footer_text(
             footer,
             result.message or "Turn sideways before running side-view posture scoring.",
+            (18, 58),
+            muted,
+            0.46,
+            1,
+        )
+        return np.vstack([frame, footer])
+
+    if not result.profile_complete:
+        _put_footer_text(footer, "Incomplete side profile", (18, 30), bad, 0.58, 2)
+        missing = ", ".join(result.missing_profile_parts) or "required body parts"
+        _put_footer_text(
+            footer,
+            _fit_text(f"Missing: {missing}", w, 0.46, 28),
             (18, 58),
             muted,
             0.46,
