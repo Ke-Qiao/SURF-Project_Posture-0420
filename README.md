@@ -35,6 +35,12 @@ Local computer only:
 Phone collection on the same Wi-Fi:
 
 ```bash
+./start_phone_demo.command
+```
+
+Equivalent command-line form:
+
+```bash
 SURF_WEB_HOST=0.0.0.0 ./start_web_demo.command
 ```
 
@@ -44,19 +50,36 @@ The script prints a local URL and, in LAN mode, a phone URL such as:
 http://<computer-lan-ip>:5050
 ```
 
+If your Mac IP is `192.168.2.3`, open the printed phone URL on the phone, for
+example `http://192.168.2.3:<printed-port>`. Use the printed port, not a port
+from an older terminal window.
+
+If the printed phone IP is not your Wi-Fi IP, override it explicitly:
+
+```bash
+SURF_PHONE_IP=192.168.2.3 ./start_phone_demo.command
+```
+
+On phones, open the printed phone URL and use `Start phone camera` in the
+`Webcam` panel. Browser live camera access normally requires HTTPS or another
+secure browser context; if the phone browser blocks live camera on HTTP LAN,
+use `Image` or `Batch` upload as the fallback until HTTPS is enabled.
+
 ## Data Collection Flow
 
 1. Start the webcam mode.
 2. Fill in `Collector`, `Subject ID`, and `True label`.
 3. Ask the subject to stand sideways with the full body visible.
-4. Click `Set reference from current pose` on a good side-view frame.
-5. Use `Edit reference` to drag the green ear, shoulder, hip, knee, and ankle
+4. Click `Start computer camera` on the laptop or `Start phone camera` on the
+   phone.
+5. Click `Set reference from current pose` on a good side-view frame.
+6. Use `Edit reference` to drag the green ear, shoulder, hip, knee, and ankle
    points if needed.
-6. Confirm the profile checklist shows the required body parts as visible.
-7. Click `Capture / Download`; each click waits 3 seconds and captures one
+7. Confirm the profile checklist shows the required body parts as visible.
+8. Click `Capture / Download`; each click waits 3 seconds and captures one
    frame.
-8. After 10 captures, download the ZIP.
-9. Send the ZIP or extracted images to the teacher for review before uploading
+9. After 10 captures, download the ZIP.
+10. Send the ZIP or extracted images to the teacher for review before uploading
    approved data to GitHub.
 
 The profile checklist follows the teacher's latest requirement:

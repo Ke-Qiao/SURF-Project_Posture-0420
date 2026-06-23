@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import csv
 import json
 import os
@@ -40,7 +41,7 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-02-profile-gate-v1"
+APP_VERSION = "week-02-mobile-camera-v1"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")
@@ -72,6 +73,7 @@ def health():
             "app": "surf-posture-web",
             "status": "ok",
             "version": APP_VERSION,
+            "host": os.environ.get("SURF_WEB_HOST", "127.0.0.1"),
             "opencv": cv2.__version__,
             "pid": os.getpid(),
             "upload_root": str(UPLOAD_ROOT),
@@ -90,7 +92,7 @@ def webcam_capture():
 
     with _WEBCAM_CAPTURE_LOCK:
         if not _WEBCAM_LATEST:
-            return _json_error("No webcam frame is ready. Start camera first.", 409)
+            return _json_error("No camera frame is ready. Start computer camera or phone camera first.", 409)
 
         latest_age = time.time() - float(_WEBCAM_LATEST.get("stored_at", 0))
         if latest_age > WEBCAM_LATEST_MAX_AGE_SECONDS:
@@ -126,6 +128,34 @@ def webcam_capture():
             _WEBCAM_CAPTURE_ZIPS[_WEBCAM_CAPTURE_TOKEN] = zip_path
 
         return jsonify(_webcam_capture_payload(ready=ready))
+
+
+@app.post("/api/browser-camera-frame")
+def browser_camera_frame():
+    """Analyze one browser camera frame and cache it for capture export."""
+    frame, error = _frame_from_data_url((request.get_json(silent=True) or {}).get("image"))
+    if error:
+        return _json_error(error, 400)
+
+    detector = None
+    try:
+        detector = PoseDetector(static_image_mode=True)
+        original_frame = frame.copy()
+        result = annotate_frame(detector, frame, show_text=False)
+        result_payload = result_to_dict(result)
+        jpeg = _store_webcam_latest(original_frame, frame, result_payload)
+        encoded = base64.b64encode(jpeg).decode("ascii")
+        return jsonify(
+            {
+                "image": f"data:image/jpeg;base64,{encoded}",
+                "result": result_payload,
+            }
+        )
+    except Exception as exc:
+        return _json_error(_runtime_error_message(), 503, detail=str(exc))
+    finally:
+        if detector is not None:
+            detector.close()
 
 
 @app.post("/api/webcam-captures-reset")
@@ -329,6 +359,25 @@ def _save_upload(uploaded, ext: str, token: str | None = None) -> Path:
     return path
 
 
+def _frame_from_data_url(value) -> tuple[np.ndarray | None, str | None]:
+    if not isinstance(value, str) or not value.strip():
+        return None, "image data URL is required."
+
+    header, separator, encoded = value.partition(",")
+    if separator != "," or not header.startswith("data:image/"):
+        return None, "image must be a data:image URL."
+
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        return None, "image data is not valid base64."
+
+    frame = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        return None, "OpenCV could not read this camera frame."
+    return frame, None
+
+
 def _teacher_sources(selection: str) -> list[dict[str, str | Path]]:
     if selection not in {"train", "val", "all"}:
         raise ValueError(f"Unsupported teacher source: {selection}")
@@ -437,6 +486,7 @@ def _capture_metadata() -> tuple[dict, str | None]:
     subject_id = _clean_text(payload.get("subject_id", ""), 60)
     label = _clean_text(payload.get("label", ""), 12).lower()
     notes = _clean_text(payload.get("notes", ""), 240)
+    source = _clean_text(payload.get("source", "computer-webcam"), 40)
     reference = _clean_reference(payload.get("reference"))
 
     if not collector:
@@ -453,6 +503,7 @@ def _capture_metadata() -> tuple[dict, str | None]:
         "subject_id": subject_id,
         "label": label,
         "notes": notes,
+        "source": source or "computer-webcam",
         "reference": reference,
     }, None
 
@@ -542,6 +593,7 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 "collector": metadata.get("collector", ""),
                 "subject_id": metadata.get("subject_id", ""),
                 "true_label": metadata.get("label", ""),
+                "capture_source": metadata.get("source", ""),
                 "captured_at": capture["captured_at"],
                 "predicted_posture": result.get("posture", ""),
                 "score": "" if result.get("score") is None else result.get("score"),
@@ -599,6 +651,7 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 f"- Collector: {captures[0].get('metadata', {}).get('collector', '') if captures else ''}",
                 f"- Subject ID: {captures[0].get('metadata', {}).get('subject_id', '') if captures else ''}",
                 f"- True label: {captures[0].get('metadata', {}).get('label', '') if captures else ''}",
+                f"- Capture source: {captures[0].get('metadata', {}).get('source', '') if captures else ''}",
                 "- Each capture includes the original webcam frame and the MediaPipe-processed frame.",
                 "- `manifest.csv` contains collection labels and posture measurements for review.",
                 "- `reference.json` contains the green reference skeleton used during collection.",

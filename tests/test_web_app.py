@@ -1,3 +1,4 @@
+import base64
 import io
 import tempfile
 import time
@@ -5,6 +6,9 @@ import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
+
+import cv2
+import numpy as np
 
 from web import app as web_app
 
@@ -45,12 +49,20 @@ class WebAppContractTests(unittest.TestCase):
             },
         }
 
+    def image_data_url(self):
+        frame = np.full((8, 8, 3), 255, dtype=np.uint8)
+        ok, buffer = cv2.imencode(".jpg", frame)
+        self.assertTrue(ok)
+        encoded = base64.b64encode(buffer.tobytes()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
+
     def test_health_exposes_week_2_profile_gate_version(self):
         response = self.client.get("/health")
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-02-profile-gate-v1", response.json["version"])
+        self.assertEqual("week-02-mobile-camera-v1", response.json["version"])
+        self.assertIn(response.json["host"], {"127.0.0.1", "0.0.0.0"})
 
     def test_load_video_returns_json_stream_url(self):
         response = self.client.post(
@@ -122,7 +134,7 @@ class WebAppContractTests(unittest.TestCase):
         response = self.client.post("/api/webcam-capture", json=self.capture_payload())
 
         self.assertEqual(409, response.status_code)
-        self.assertIn("No webcam frame", response.json["error"])
+        self.assertIn("No camera frame", response.json["error"])
 
     def test_webcam_capture_rejects_missing_metadata(self):
         response = self.client.post("/api/webcam-capture", json={})
@@ -138,6 +150,42 @@ class WebAppContractTests(unittest.TestCase):
 
         self.assertEqual(400, response.status_code)
         self.assertIn("reference skeleton", response.json["error"])
+
+    def test_browser_camera_frame_requires_image_data_url(self):
+        response = self.client.post("/api/browser-camera-frame", json={})
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("image data URL", response.json["error"])
+
+    def test_browser_camera_frame_analyzes_and_caches_latest_frame(self):
+        fake_result = object()
+        result_payload = {
+            "detected": True,
+            "posture": "Good",
+            "score": 100.0,
+            "side": "left",
+            "view": "side",
+            "view_valid": True,
+            "profile_complete": True,
+            "missing_profile_parts": [],
+            "angles": [],
+        }
+
+        with patch.object(web_app, "PoseDetector") as detector_cls, \
+            patch.object(web_app, "annotate_frame", return_value=fake_result), \
+            patch.object(web_app, "result_to_dict", return_value=result_payload):
+            response = self.client.post(
+                "/api/browser-camera-frame",
+                json={"image": self.image_data_url()},
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertTrue(response.json["image"].startswith("data:image/jpeg;base64,"))
+        self.assertEqual(result_payload, response.json["result"])
+        self.assertEqual(result_payload, web_app._WEBCAM_LATEST["result"])
+        self.assertIn("original_jpeg", web_app._WEBCAM_LATEST)
+        self.assertIn("annotated_jpeg", web_app._WEBCAM_LATEST)
+        detector_cls.return_value.close.assert_called_once()
 
     def test_webcam_capture_rejects_incomplete_profile(self):
         web_app._WEBCAM_LATEST.update(

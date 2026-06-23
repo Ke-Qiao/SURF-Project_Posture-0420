@@ -38,7 +38,13 @@ health_body() {
 }
 
 is_current_demo_server() {
-  [[ "$1" == *'"app":"surf-posture-web"'* && "$1" == *'"version":"week-02-profile-gate-v1"'* ]]
+  if [[ "$1" != *'"app":"surf-posture-web"'* || "$1" != *'"version":"week-02-mobile-camera-v1"'* ]]; then
+    return 1
+  fi
+  if [[ "$HOST" == "0.0.0.0" && "$1" != *'"host":"0.0.0.0"'* ]]; then
+    return 1
+  fi
+  return 0
 }
 
 port_is_open() {
@@ -80,14 +86,59 @@ pick_available_url() {
 
 lan_ip() {
   "$PYTHON_BIN" - <<'PY'
+import ipaddress
+import os
+import re
 import socket
+import subprocess
+
+override = os.environ.get("SURF_PHONE_IP", "").strip()
+if override:
+    print(override)
+    raise SystemExit
+
+excluded_interfaces = ("lo", "utun", "awdl", "llw", "bridge", "vmenet")
+reserved_benchmark = ipaddress.ip_network("198.18.0.0/15")
+candidates = []
+
+try:
+    output = subprocess.check_output(["/sbin/ifconfig"], text=True)
+except (OSError, subprocess.SubprocessError):
+    output = ""
+
+current_interface = ""
+for line in output.splitlines():
+    if line and not line.startswith((" ", "\t")):
+        current_interface = line.split(":", 1)[0]
+        continue
+    match = re.search(r"\binet\s+(\d+\.\d+\.\d+\.\d+)\b", line)
+    if not match:
+        continue
+    try:
+        ip = ipaddress.ip_address(match.group(1))
+    except ValueError:
+        continue
+    if ip.is_loopback or ip.is_link_local or ip in reserved_benchmark:
+        continue
+    if current_interface.startswith(excluded_interfaces):
+        continue
+    if not ip.is_private:
+        continue
+    rank = 0 if current_interface == "en0" else 1
+    candidates.append((rank, current_interface, str(ip)))
+
+if candidates:
+    print(sorted(candidates)[0][2])
+    raise SystemExit
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 try:
     sock.connect(("8.8.8.8", 80))
-    print(sock.getsockname()[0])
+    ip = ipaddress.ip_address(sock.getsockname()[0])
+    if not (ip.is_loopback or ip.is_link_local or ip in reserved_benchmark):
+        print(str(ip))
 except OSError:
-    print("")
+    pass
 finally:
     sock.close()
 PY

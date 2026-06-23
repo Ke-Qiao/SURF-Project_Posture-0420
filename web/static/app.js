@@ -39,6 +39,7 @@ const downloadBatch = document.querySelector("#downloadBatch");
 const downloadEvidence = document.querySelector("#downloadEvidence");
 const captureWebcamButton = document.querySelector("#captureWebcamSet");
 const webcamCaptureStatus = document.querySelector("#webcamCaptureStatus");
+const startPhoneCameraButton = document.querySelector("#startPhoneCamera");
 const collectorInput = document.querySelector("#collectorInput");
 const subjectInput = document.querySelector("#subjectInput");
 const postureLabel = document.querySelector("#postureLabel");
@@ -67,12 +68,22 @@ let referenceSkeleton = loadReferenceSkeleton();
 let referenceVisible = true;
 let referenceEditing = false;
 let draggingReferencePoint = "";
+let browserCameraStream = null;
+let browserCameraTimer = null;
+let browserCameraUploadPromise = null;
+const browserCameraVideo = document.createElement("video");
+const browserCameraCanvas = document.createElement("canvas");
+const browserCameraIntervalMs = 1400;
+
+browserCameraVideo.muted = true;
+browserCameraVideo.playsInline = true;
 
 modeButtons.forEach((button) => {
   button.addEventListener("click", () => setMode(button.dataset.mode));
 });
 
 document.querySelector("#startWebcam").addEventListener("click", startWebcam);
+startPhoneCameraButton.addEventListener("click", startPhoneCamera);
 document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
@@ -109,27 +120,146 @@ function setMode(mode) {
 
 function startWebcam() {
   stopActiveStream();
+  stopBrowserCameraStream();
   clearSelectedMediaUrl();
-  latestSourceName = "webcam";
+  latestSourceName = "computer-webcam";
   resetMetrics("Starting camera");
   setStatus("Camera", "good");
   activeStreamController = new AbortController();
   readFrameStream(`/stream/webcam-json?ts=${Date.now()}`, activeStreamController.signal, "Camera");
 }
 
+async function startPhoneCamera() {
+  stopActiveStream();
+  stopBrowserCameraStream();
+  clearSelectedMediaUrl();
+  latestSourceName = "phone-camera";
+  resetMetrics("Starting phone camera");
+  setStatus("Phone camera");
+
+  if (!window.isSecureContext) {
+    showError("Phone camera requires HTTPS or localhost. Use the Image/Batch upload path on HTTP LAN, or add HTTPS for live phone camera.");
+    setStatus("HTTPS required", "bad");
+    return;
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showError("This browser does not expose camera access to the page.");
+    setStatus("Camera blocked", "bad");
+    return;
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: {ideal: "environment"},
+        width: {ideal: 1280},
+        height: {ideal: 720},
+      },
+    });
+    browserCameraStream = stream;
+    browserCameraVideo.srcObject = stream;
+    previewVideo.srcObject = stream;
+    previewVideo.removeAttribute("src");
+    previewVideo.muted = true;
+    previewVideo.playsInline = true;
+    previewVideo.classList.add("active");
+    preview.classList.remove("active");
+    emptyState.style.display = "none";
+    await Promise.all([browserCameraVideo.play(), previewVideo.play()]);
+    setStatus("Phone camera", "good");
+    await analyzeBrowserCameraFrame(true);
+    browserCameraTimer = window.setInterval(() => {
+      analyzeBrowserCameraFrame(false);
+    }, browserCameraIntervalMs);
+  } catch (error) {
+    stopBrowserCameraStream();
+    setStatus("Camera blocked", "bad");
+    showError(`Phone camera could not start. Browser permission or HTTPS may be blocking it. Detail: ${error.message}`);
+  }
+}
+
 function stopPreview() {
   stopActiveStream();
+  stopBrowserCameraStream();
   clearSelectedMediaUrl();
   latestFrameDataUrl = "";
   refreshEvidenceButton();
   preview.removeAttribute("src");
   previewVideo.removeAttribute("src");
+  previewVideo.srcObject = null;
   previewVideo.pause();
   preview.classList.remove("active");
   previewVideo.classList.remove("active");
   emptyState.style.display = "block";
   drawReferenceOverlay();
   setStatus("Ready");
+}
+
+async function analyzeBrowserCameraFrame(force) {
+  if (!browserCameraStream || browserCameraVideo.readyState < 2) {
+    return null;
+  }
+  if (browserCameraUploadPromise) {
+    return force ? browserCameraUploadPromise : null;
+  }
+
+  browserCameraUploadPromise = (async () => {
+    const image = browserCameraFrameDataUrl();
+    const response = await fetch("/api/browser-camera-frame", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({image}),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Phone camera analysis failed.");
+    }
+    showImage(payload.image);
+    renderMetrics(payload.result);
+    setStatus(payload.result.detected ? "Phone camera" : "No detection", payload.result.detected ? "good" : "bad");
+    return payload;
+  })();
+
+  try {
+    return await browserCameraUploadPromise;
+  } catch (error) {
+    setStatus("Camera error", "bad");
+    showError(error.message);
+    return null;
+  } finally {
+    browserCameraUploadPromise = null;
+  }
+}
+
+function browserCameraFrameDataUrl() {
+  const width = browserCameraVideo.videoWidth;
+  const height = browserCameraVideo.videoHeight;
+  if (!width || !height) {
+    throw new Error("Phone camera frame is not ready.");
+  }
+  browserCameraCanvas.width = width;
+  browserCameraCanvas.height = height;
+  const ctx = browserCameraCanvas.getContext("2d");
+  ctx.drawImage(browserCameraVideo, 0, 0, width, height);
+  return browserCameraCanvas.toDataURL("image/jpeg", 0.88);
+}
+
+function stopBrowserCameraStream() {
+  if (browserCameraTimer) {
+    window.clearInterval(browserCameraTimer);
+    browserCameraTimer = null;
+  }
+  if (browserCameraStream) {
+    browserCameraStream.getTracks().forEach((track) => track.stop());
+    browserCameraStream = null;
+  }
+  browserCameraVideo.pause();
+  browserCameraVideo.srcObject = null;
+  if (previewVideo.srcObject) {
+    previewVideo.pause();
+    previewVideo.srcObject = null;
+  }
 }
 
 async function readFrameStream(url, signal, statusLabel) {
@@ -274,8 +404,11 @@ function showImage(url) {
     refreshEvidenceButton();
   }
   preview.classList.add("active");
-  previewVideo.pause();
-  previewVideo.removeAttribute("src");
+  if (!browserCameraStream) {
+    previewVideo.pause();
+    previewVideo.removeAttribute("src");
+    previewVideo.srcObject = null;
+  }
   previewVideo.classList.remove("active");
   emptyState.style.display = "none";
   requestAnimationFrame(drawReferenceOverlay);
@@ -286,6 +419,7 @@ function showVideo(url) {
   refreshEvidenceButton();
   preview.removeAttribute("src");
   preview.classList.remove("active");
+  previewVideo.srcObject = null;
   previewVideo.src = url;
   previewVideo.classList.add("active");
   emptyState.style.display = "none";
@@ -408,6 +542,12 @@ async function captureWebcamSet() {
       webcamCaptureStatus.textContent = `Capturing in ${remaining}s`;
       setStatus(`Capture ${remaining}s`);
       await delay(1000);
+    }
+    if (browserCameraStream) {
+      const payload = await analyzeBrowserCameraFrame(true);
+      if (!payload) {
+        throw new Error("Phone camera frame is not ready for capture.");
+      }
     }
 
     const response = await fetch("/api/webcam-capture", {
@@ -627,6 +767,7 @@ function collectionMetadata() {
       subject_id: subjectId,
       label,
       notes: captureNotes.value.trim(),
+      source: browserCameraStream ? "phone-camera" : "computer-webcam",
       reference: referenceSkeleton,
     },
   };

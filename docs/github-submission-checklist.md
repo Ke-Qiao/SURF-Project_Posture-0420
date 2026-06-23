@@ -19,8 +19,9 @@ git diff --check
 
 ## Web 检查
 
-- `/health` 返回 `week-02-profile-gate-v1`。
+- `/health` 返回 `week-02-mobile-camera-v1`。
 - image、video、webcam、batch 四种模式仍可切换。
+- Webcam 面板中 `Start computer camera` 和 `Start phone camera` 都显示出来。
 - Webcam 采集缺少 collector、subject、label 或 reference 时会拒绝。
 - Webcam 采集缺少 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 任一项时会拒绝。
 - `Set reference from current pose` 能生成绿色参考骨架。
