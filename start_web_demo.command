@@ -48,7 +48,7 @@ health_body() {
 }
 
 is_current_demo_server() {
-  if [[ "$1" != *'"app":"surf-posture-web"'* || "$1" != *'"version":"week-02-mobile-camera-v1"'* ]]; then
+  if [[ "$1" != *'"app":"surf-posture-web"'* || "$1" != *'"version":"week-02-fixed-reference-v1"'* ]]; then
     return 1
   fi
   if [[ "$HOST" == "0.0.0.0" && "$1" != *'"host":"0.0.0.0"'* ]]; then

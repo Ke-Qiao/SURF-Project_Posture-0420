@@ -96,15 +96,19 @@ SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
 3. Ask the subject to stand sideways with the full body visible.
 4. Click `Start computer camera` on the laptop or `Start phone camera` on the
    phone.
-5. Click `Set reference from current pose` on a good side-view frame.
-6. Use `Edit reference` to drag the green ear, shoulder, hip, knee, and ankle
-   points if needed.
-7. Confirm the profile checklist shows the required body parts as visible.
-8. Click `Capture / Download`; each click waits 3 seconds and captures one
+5. Wait until the fixed green good-posture skeleton appears over the detected
+   side-view body.
+6. Confirm the profile checklist shows the required body parts as visible.
+7. Click `Capture / Download`; each click waits 3 seconds and captures one
    frame.
-9. After 10 captures, download the ZIP.
-10. Send the ZIP or extracted images to the teacher for review before uploading
+8. After 10 captures, download the ZIP.
+9. Send the ZIP or extracted images to the teacher for review before uploading
    approved data to GitHub.
+
+The green reference skeleton defaults to `fixed-good-posture-v1`. It is
+auto-aligned to the detected side-view body and uses 180-degree good-posture
+angles. `Use current pose as custom reference` is available only as an optional
+debug/demo override.
 
 The profile checklist follows the teacher's latest requirement:
 

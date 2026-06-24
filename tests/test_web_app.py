@@ -44,7 +44,7 @@ class WebAppContractTests(unittest.TestCase):
                     "shoulder_hip_knee": 178.0,
                     "hip_knee_ankle": 176.0,
                 },
-                "source": "unit-test",
+                "source": "fixed-good-posture-v1",
                 "updated_at": "2026-06-23T00:00:00Z",
             },
         }
@@ -61,7 +61,7 @@ class WebAppContractTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-02-mobile-camera-v1", response.json["version"])
+        self.assertEqual("week-02-fixed-reference-v1", response.json["version"])
         self.assertIn(response.json["host"], {"127.0.0.1", "0.0.0.0"})
         self.assertFalse(response.json["https"])
 
@@ -261,7 +261,7 @@ class WebAppContractTests(unittest.TestCase):
             self.assertIn("collector,subject_id,true_label", manifest)
             self.assertIn("fengshuo,subject_001,good", manifest)
             reference_json = exported.read("reference.json").decode("utf-8")
-            self.assertIn('"source": "unit-test"', reference_json)
+            self.assertIn('"source": "fixed-good-posture-v1"', reference_json)
         download.close()
 
     def test_webcam_capture_rejects_stale_cached_frame(self):

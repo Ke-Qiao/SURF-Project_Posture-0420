@@ -41,7 +41,7 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-02-mobile-camera-v1"
+APP_VERSION = "week-02-fixed-reference-v1"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")

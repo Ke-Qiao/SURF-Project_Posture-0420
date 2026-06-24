@@ -47,9 +47,8 @@
    - `True label`
    - `Notes` 可选
 4. 让 subject 站成清楚侧视。
-5. 点击 `Set reference from current pose` 设置绿色参考骨架。
-6. 必要时点击 `Edit reference`，拖动 ear、shoulder、hip、knee、ankle。
-7. 检查右侧 profile checklist：
+5. 等页面显示固定绿色 good-posture skeleton；默认 source 为 `fixed-good-posture-v1`。
+6. 检查右侧 profile checklist：
    - Head
    - Neck
    - Shoulder
@@ -57,9 +56,9 @@
    - Buttock
    - Knees
    - Ankle
-8. 如果任意部位显示 missing，重新调整相机或被拍摄者位置。
-9. 点击 `Capture / Download`，每次等待 3 秒采集一张。
-10. 满 10 张后下载 ZIP。
+7. 如果任意部位显示 missing，重新调整相机或被拍摄者位置。
+8. 点击 `Capture / Download`，每次等待 3 秒采集一张。
+9. 满 10 张后下载 ZIP。
 
 说明：MediaPipe 没有显式 neck 和 buttock 点。平台中 `Neck` 使用 ear-shoulder 段作为代理，`Buttock` 使用 hip 点作为代理。
 

@@ -56,7 +56,20 @@ const referenceAngleNames = [
   ["shoulder_hip_knee", "Trunk Lean", "shoulder", "hip", "knee"],
   ["hip_knee_ankle", "Knee", "hip", "knee", "ankle"],
 ];
+const fixedReferenceSource = "fixed-good-posture-v1";
+const customReferenceSource = "custom-current-pose";
 const referenceStorageKey = "surfPostureReferenceSkeleton";
+const referenceModes = {
+  fixed: "fixed",
+  custom: "custom",
+};
+const fixedReferenceTemplate = {
+  ear: {x: 0, y: 0.06},
+  shoulder: {x: 0, y: 0.22},
+  hip: {x: 0, y: 0.48},
+  knee: {x: 0, y: 0.76},
+  ankle: {x: 0, y: 1},
+};
 let selectedMediaUrl = "";
 let activeStreamController = null;
 let activeMode = "webcam";
@@ -64,7 +77,9 @@ let latestResult = null;
 let latestFrameDataUrl = "";
 let latestSourceName = "";
 let webcamCaptureDownloadUrl = "";
-let referenceSkeleton = loadReferenceSkeleton();
+let referenceMode = referenceModes.fixed;
+let customReferenceSkeleton = loadCustomReferenceSkeleton();
+let referenceSkeleton = null;
 let referenceVisible = true;
 let referenceEditing = false;
 let draggingReferencePoint = "";
@@ -441,6 +456,7 @@ function setStatus(text, kind = "") {
 
 function resetMetrics(message = "") {
   latestResult = null;
+  syncActiveReference();
   latestFrameDataUrl = "";
   refreshEvidenceButton();
   resetBatchDownload();
@@ -461,6 +477,7 @@ function resetMetrics(message = "") {
 
 function showError(message) {
   latestResult = null;
+  syncActiveReference();
   refreshEvidenceButton();
   resetBatchDownload();
   postureValue.textContent = "Error";
@@ -529,7 +546,7 @@ async function captureWebcamSet() {
     return;
   }
 
-  const metadata = collectionMetadata();
+  let metadata = collectionMetadata();
   if (!metadata.ok) {
     setStatus("Missing fields", "bad");
     webcamCaptureStatus.textContent = metadata.error;
@@ -547,6 +564,10 @@ async function captureWebcamSet() {
       const payload = await analyzeBrowserCameraFrame(true);
       if (!payload) {
         throw new Error("Phone camera frame is not ready for capture.");
+      }
+      metadata = collectionMetadata();
+      if (!metadata.ok) {
+        throw new Error(metadata.error);
       }
     }
 
@@ -578,7 +599,9 @@ function renderMetrics(result) {
   const advice = result.advice || [];
   const angles = result.angles || [];
   latestResult = result;
+  syncActiveReference();
   refreshEvidenceButton();
+  drawReferenceOverlay();
 
   postureValue.classList.remove("error-text");
   postureValue.textContent = result.posture || "-";
@@ -753,8 +776,9 @@ function collectionMetadata() {
   if (!label) {
     return {ok: false, error: "Choose good or bad posture."};
   }
+  syncActiveReference();
   if (!referenceComplete(referenceSkeleton)) {
-    return {ok: false, error: "Set a green reference skeleton first."};
+    return {ok: false, error: "Fixed reference waiting for a detected side pose."};
   }
   if (!latestResult || latestResult.profile_complete === false) {
     return {ok: false, error: `Missing profile parts: ${missingProfileText(latestResult)}`};
@@ -833,13 +857,15 @@ function setReferenceFromCurrentPose() {
     return;
   }
 
-  referenceSkeleton = {
+  customReferenceSkeleton = {
     points,
     angles: calculateReferenceAngles(points),
-    source: "current-pose",
+    source: customReferenceSource,
     updated_at: new Date().toISOString(),
   };
-  saveReferenceSkeleton();
+  referenceMode = referenceModes.custom;
+  referenceSkeleton = customReferenceSkeleton;
+  saveCustomReferenceSkeleton();
   referenceVisible = true;
   referenceEditing = false;
   updateReferenceStatus();
@@ -849,9 +875,14 @@ function setReferenceFromCurrentPose() {
 }
 
 function toggleReferenceEditing() {
-  if (!referenceComplete(referenceSkeleton)) {
-    setStatus("No reference", "bad");
-    referenceStatus.textContent = "Set a reference before editing.";
+  if (referenceMode !== referenceModes.custom) {
+    setStatus("Fixed reference", "bad");
+    referenceStatus.textContent = "Fixed good skeleton cannot be edited.";
+    return;
+  }
+  if (!referenceComplete(customReferenceSkeleton)) {
+    setStatus("No custom reference", "bad");
+    referenceStatus.textContent = "Use current pose as custom reference before editing.";
     return;
   }
   referenceEditing = !referenceEditing;
@@ -867,17 +898,19 @@ function toggleReferenceVisibility() {
 }
 
 function resetReferenceSkeleton() {
-  referenceSkeleton = null;
+  referenceMode = referenceModes.fixed;
+  customReferenceSkeleton = null;
+  syncActiveReference();
   referenceEditing = false;
   draggingReferencePoint = "";
   localStorage.removeItem(referenceStorageKey);
   updateReferenceStatus();
   renderReferenceDiffs(latestResult);
   drawReferenceOverlay();
-  setStatus("Reference reset");
+  setStatus("Fixed reference", "good");
 }
 
-function loadReferenceSkeleton() {
+function loadCustomReferenceSkeleton() {
   try {
     const raw = localStorage.getItem(referenceStorageKey);
     if (!raw) {
@@ -888,16 +921,87 @@ function loadReferenceSkeleton() {
       return null;
     }
     parsed.angles = parsed.angles || calculateReferenceAngles(parsed.points);
+    parsed.source = customReferenceSource;
     return parsed;
   } catch (error) {
     return null;
   }
 }
 
-function saveReferenceSkeleton() {
-  if (referenceComplete(referenceSkeleton)) {
-    localStorage.setItem(referenceStorageKey, JSON.stringify(referenceSkeleton));
+function saveCustomReferenceSkeleton() {
+  if (referenceComplete(customReferenceSkeleton)) {
+    localStorage.setItem(referenceStorageKey, JSON.stringify(customReferenceSkeleton));
   }
+}
+
+function syncActiveReference() {
+  if (referenceMode === referenceModes.custom) {
+    referenceSkeleton = customReferenceSkeleton;
+  } else {
+    referenceEditing = false;
+    referenceSkeleton = buildFixedReferenceSkeleton(latestResult);
+  }
+  updateReferenceStatus();
+}
+
+function buildFixedReferenceSkeleton(result) {
+  const current = keypointsByName(result);
+  if (!current) {
+    return null;
+  }
+
+  const yValues = referencePointNames.map((name) => current[name].y);
+  const ySpan = Math.max(...yValues) - Math.min(...yValues);
+  const earToAnkle = Math.abs(current.ankle.y - current.ear.y);
+  const height = clamp(Math.max(ySpan, earToAnkle), 0.12, 0.92);
+  const x = clamp(current.ankle.x, 0.05, 0.95);
+  const ankleY = clamp(current.ankle.y, 0.12, 0.97);
+
+  const points = {};
+  referencePointNames.forEach((name) => {
+    const template = fixedReferenceTemplate[name];
+    points[name] = {
+      x,
+      y: ankleY - (1 - template.y) * height,
+    };
+  });
+
+  const minY = Math.min(...referencePointNames.map((name) => points[name].y));
+  const maxY = Math.max(...referencePointNames.map((name) => points[name].y));
+  let yShift = 0;
+  if (minY < 0.03) {
+    yShift = 0.03 - minY;
+  } else if (maxY > 0.97) {
+    yShift = 0.97 - maxY;
+  }
+
+  referencePointNames.forEach((name) => {
+    points[name].y = clamp(points[name].y + yShift, 0.03, 0.97);
+    points[name].x = roundCoordinate(points[name].x);
+    points[name].y = roundCoordinate(points[name].y);
+  });
+
+  return {
+    points,
+    angles: {
+      ear_shoulder_hip: 180,
+      shoulder_hip_knee: 180,
+      hip_knee_ankle: 180,
+    },
+    source: fixedReferenceSource,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function keypointsByName(result) {
+  const keypoints = result && Array.isArray(result.keypoints) ? result.keypoints : [];
+  const points = {};
+  keypoints.forEach((point) => {
+    if (referencePointNames.includes(point.name) && Number.isFinite(point.x) && Number.isFinite(point.y)) {
+      points[point.name] = {x: point.x, y: point.y};
+    }
+  });
+  return referencePointNames.every((name) => points[name]) ? points : null;
 }
 
 function referenceComplete(reference) {
@@ -910,9 +1014,16 @@ function referenceComplete(reference) {
 
 function updateReferenceStatus() {
   const hasReference = referenceComplete(referenceSkeleton);
-  referenceStatus.textContent = hasReference
-    ? `Reference ${referenceEditing ? "editing" : "ready"}`
-    : "No reference set";
+  if (referenceMode === referenceModes.custom) {
+    referenceStatus.textContent = hasReference
+      ? `Custom reference ${referenceEditing ? "editing" : "ready"}`
+      : "No custom reference set";
+  } else {
+    referenceStatus.textContent = hasReference
+      ? "Fixed good skeleton"
+      : "Fixed reference waiting for pose";
+  }
+  editReferenceButton.disabled = referenceMode !== referenceModes.custom;
   editReferenceButton.textContent = referenceEditing ? "Finish editing" : "Edit reference";
   toggleReferenceButton.textContent = referenceVisible ? "Hide reference" : "Show reference";
   referenceCanvas.classList.toggle("editing", referenceEditing && hasReference && referenceVisible);
@@ -998,7 +1109,7 @@ function canvasToNormalized(x, y, mediaBox) {
 }
 
 function startReferenceDrag(event) {
-  if (!referenceEditing || !referenceComplete(referenceSkeleton)) {
+  if (referenceMode !== referenceModes.custom || !referenceEditing || !referenceComplete(referenceSkeleton)) {
     return;
   }
   const point = nearestReferencePoint(event);
@@ -1012,19 +1123,20 @@ function startReferenceDrag(event) {
 }
 
 function dragReferencePoint(event) {
-  if (!draggingReferencePoint || !referenceComplete(referenceSkeleton)) {
+  if (referenceMode !== referenceModes.custom || !draggingReferencePoint || !referenceComplete(referenceSkeleton)) {
     return;
   }
   const rect = referenceCanvas.getBoundingClientRect();
   const mediaBox = currentMediaBox();
-  referenceSkeleton.points[draggingReferencePoint] = canvasToNormalized(
+  customReferenceSkeleton.points[draggingReferencePoint] = canvasToNormalized(
     event.clientX - rect.left,
     event.clientY - rect.top,
     mediaBox,
   );
-  referenceSkeleton.angles = calculateReferenceAngles(referenceSkeleton.points);
-  referenceSkeleton.updated_at = new Date().toISOString();
-  saveReferenceSkeleton();
+  customReferenceSkeleton.angles = calculateReferenceAngles(customReferenceSkeleton.points);
+  customReferenceSkeleton.updated_at = new Date().toISOString();
+  referenceSkeleton = customReferenceSkeleton;
+  saveCustomReferenceSkeleton();
   renderReferenceDiffs(latestResult);
   drawReferenceOverlay();
 }
@@ -1115,6 +1227,10 @@ function roundAngle(value) {
   return Math.round(value * 10) / 10;
 }
 
+function roundCoordinate(value) {
+  return Math.round(value * 1000000) / 1000000;
+}
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -1132,6 +1248,7 @@ function downloadCurrentEvidence() {
     setStatus("No evidence", "bad");
     return;
   }
+  syncActiveReference();
 
   const evidence = {
     app: "surf-posture-demo",

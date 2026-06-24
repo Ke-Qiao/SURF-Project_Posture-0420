@@ -242,7 +242,7 @@ photos requested by the teacher.
 3. Fill `Collector`, `Subject ID`, `True label`, and optional `Notes`.
 4. Tap `Start phone camera` and allow browser camera permission.
 5. Wait until the preview shows skeleton/metrics, not just the raw camera feed.
-6. Set or adjust the green reference skeleton.
+6. Wait until the fixed green good-posture skeleton appears.
 7. Confirm the profile checklist shows Head, Neck, Shoulder, Hip, Buttock,
    Knees, and Ankle as visible.
 8. Tap `Capture / Download`; the app waits 3 seconds, analyzes the current
@@ -256,7 +256,7 @@ photos requested by the teacher.
 3. 填写 `Collector`、`Subject ID`、`True label` 和可选 `Notes`。
 4. 点击 `Start phone camera`，允许浏览器摄像头权限。
 5. 等页面出现骨骼和指标后再采集，不要只看原始相机画面。
-6. 设置或调整绿色参考骨架。
+6. 等固定绿色 good-posture skeleton 出现。
 7. 确认 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 都显示 visible。
 8. 点击 `Capture / Download`；平台倒计时 3 秒，分析当前手机帧，并保存到同一个 10 张 ZIP 队列。
 9. 满 10 张后点击 `Download capture ZIP`。
@@ -270,7 +270,7 @@ The app blocks capture if any of the following is missing:
 - `Collector`
 - `Subject ID`
 - `True label`
-- Green reference skeleton
+- Fixed green good-posture skeleton generated from the active detected pose
 - Active webcam frame
 - Complete side profile
 
@@ -310,34 +310,37 @@ summary.md
 | File/Folder | English | 中文 |
 | --- | --- | --- |
 | `original/` | Original webcam frames. | 原始摄像头图片。 |
-| `mediapipe/` | Processed frames with MediaPipe skeleton and green reference skeleton. | 带 MediaPipe 骨架和绿色参考骨架的处理图。 |
+| `mediapipe/` | Processed frames with MediaPipe skeleton and the active green reference skeleton. | 带 MediaPipe 骨架和当前绿色参考骨架的处理图。 |
 | `manifest.csv` | Per-image metadata: collector, subject, label, prediction, score, visibility checklist, angles, notes. | 每张图的元数据：采集者、subject、标签、预测、分数、部位可见性、角度、备注。 |
-| `reference.json` | Green reference skeleton used during collection. | 采集时使用的绿色参考骨架。 |
+| `reference.json` | Green reference skeleton used during collection. Default source is `fixed-good-posture-v1`. | 采集时使用的绿色参考骨架。默认 source 是 `fixed-good-posture-v1`。 |
 | `summary.md` | Human-readable export summary. | 人类可读的导出摘要。 |
 
 ---
 
 ## 4. Reference Skeleton Controls / 参考骨架控制
 
-The green reference skeleton represents a good side-view posture baseline. It is
-used for visual comparison and angle difference display.
+The green reference skeleton defaults to a fixed good side-view posture
+baseline. It uses 180-degree good-posture angles and auto-aligns to the active
+detected body scale and ankle position.
 
-绿色参考骨架代表 good side-view posture 的参考基准，用于视觉对比和角度差显示。
+绿色参考骨架默认是固定 good side-view posture 基准。它使用 180 度 good-posture
+角度，并会根据当前检测到的人体尺度和脚踝位置自动对齐。
 
 | Control | English | 中文 |
 | --- | --- | --- |
-| `Set reference from current pose` | Uses the current detected side-view pose to create the green reference skeleton. Requires a valid detected side view. | 用当前检测到的侧视姿态生成绿色参考骨架。需要当前画面是有效侧视。 |
-| `Edit reference` | Enables dragging the five reference points: ear, shoulder, hip, knee, ankle. Button changes to `Finish editing` while editing. | 开启拖拽编辑 5 个参考点：ear、shoulder、hip、knee、ankle。编辑时按钮变为 `Finish editing`。 |
+| `Use current pose as custom reference` | Optional debug/demo override. Uses the current detected side-view pose as a custom reference. | 可选调试/演示覆盖项。用当前检测到的侧视姿态作为自定义参考骨架。 |
+| `Edit reference` | Enabled only after using a custom reference. Allows dragging ear, shoulder, hip, knee, ankle. | 仅在使用自定义参考骨架后可用，可拖动 ear、shoulder、hip、knee、ankle。 |
 | `Hide reference` / `Show reference` | Toggles green reference skeleton visibility. | 显示或隐藏绿色参考骨架。 |
-| `Reset reference` | Deletes the saved reference skeleton from the browser. | 删除浏览器中保存的参考骨架。 |
-| `Reference ready` | Status shown when a reference exists. | 已有参考骨架时显示。 |
-| `Reference editing` | Status shown while editing points. | 正在编辑参考骨架时显示。 |
-| `No reference set` | Status shown before a reference is created. | 尚未设置参考骨架时显示。 |
+| `Reset to fixed good skeleton` | Returns to the default fixed good-posture skeleton and clears the custom reference. | 恢复默认固定 good-posture skeleton，并清除自定义参考。 |
+| `Fixed good skeleton` | Status shown when the fixed reference is aligned to the current detected pose. | 固定参考骨架已根据当前检测姿态对齐。 |
+| `Fixed reference waiting for pose` | Status shown before a valid pose is available. | 还没有有效姿态时显示。 |
+| `Custom reference ready` | Status shown when a custom reference exists. | 已有自定义参考骨架时显示。 |
 
-The reference skeleton is saved in browser `localStorage`, so it can remain
-available after refreshing the page on the same browser.
+Only custom references are saved in browser `localStorage`. The fixed good
+skeleton is the default and is regenerated from the current detected pose.
 
-参考骨架保存在浏览器 `localStorage` 中，所以同一浏览器刷新页面后仍可恢复。
+只有自定义参考骨架会保存在浏览器 `localStorage` 中。固定 good skeleton 是默认项，
+会根据当前检测姿态重新生成。
 
 ---
 
@@ -463,7 +466,7 @@ dataset ZIP.
 | `Side view required` | Front view or non-side view detected. | 检测到正面或非侧视，需要侧身。 |
 | `Incomplete side profile` | A required body part is missing or low-confidence. | 必需身体部位缺失或置信度过低。 |
 | `Missing profile parts: ...` | Capture blocked because the listed parts are missing. | 因列出的部位缺失而拒绝采集。 |
-| `Set a green reference skeleton first.` | Capture blocked until reference skeleton exists. | 未设置绿色参考骨架，不能采集。 |
+| `Fixed reference waiting for a detected side pose.` | Capture blocked until a valid detected side pose can align the fixed skeleton. | 还没有有效侧视检测姿态，固定参考骨架无法对齐。 |
 | `ZIP ready` | Ten valid webcam captures are ready for download. | 已采集满 10 张，可以下载 ZIP。 |
 | `Capture error` | Capture request failed; read the status text for detail. | 采集失败，查看状态文字获取原因。 |
 
@@ -478,12 +481,11 @@ English:
 3. Ask the subject to stand sideways against a clean background.
 4. Start `Start computer camera` on a laptop/desktop, or `Start phone camera`
    on a phone browser.
-5. Set the green reference from a good side-view pose.
-6. Edit reference points if needed.
-7. Confirm all profile checklist parts are visible.
-8. Capture 10 photos for one label.
-9. Download ZIP.
-10. Send the ZIP or cloud link to the teacher for approval.
+5. Wait until the fixed green good-posture skeleton appears.
+6. Confirm all profile checklist parts are visible.
+7. Capture 10 photos for one label.
+8. Download ZIP.
+9. Send the ZIP or cloud link to the teacher for approval.
 
 中文：
 
@@ -492,9 +494,8 @@ English:
 3. 让被拍摄者在干净背景前侧身站立。
 4. 在电脑上点击 `Start computer camera`，或在手机浏览器上点击
    `Start phone camera`。
-5. 用一张 good side-view 姿态设置绿色参考骨架。
-6. 必要时手动拖动参考点微调。
-7. 确认所有 profile checklist 部位都显示 visible。
-8. 针对一个标签采集 10 张照片。
-9. 下载 ZIP。
-10. 将 ZIP 或云盘链接发给老师审核。
+5. 等固定绿色 good-posture skeleton 出现。
+6. 确认所有 profile checklist 部位都显示 visible。
+7. 针对一个标签采集 10 张照片。
+8. 下载 ZIP。
+9. 将 ZIP 或云盘链接发给老师审核。

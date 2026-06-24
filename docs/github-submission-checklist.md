@@ -21,15 +21,15 @@ git diff --check
 
 ## Web 检查
 
-- `/health` 返回 `week-02-mobile-camera-v1`。
+- `/health` 返回 `week-02-fixed-reference-v1`。
 - HTTPS 模式下 `/health` 返回 `"https": true`。
 - image、video、webcam、batch 四种模式仍可切换。
 - Webcam 面板中 `Start computer camera` 和 `Start phone camera` 都显示出来。
-- Webcam 采集缺少 collector、subject、label 或 reference 时会拒绝。
+- Webcam 采集缺少 collector、subject 或 label 时会拒绝。
 - Webcam 采集缺少 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 任一项时会拒绝。
-- `Set reference from current pose` 能生成绿色参考骨架。
-- `Edit reference` 可以拖动 5 个参考点。
-- 刷新页面后 reference 可以恢复。
+- 页面默认使用 `fixed-good-posture-v1` 绿色参考骨架。
+- `Use current pose as custom reference` 可以切换到自定义参考骨架。
+- `Reset to fixed good skeleton` 可以恢复固定参考骨架。
 - 满 10 张后 ZIP 可下载。
 - ZIP 包含：
   - `original/`
