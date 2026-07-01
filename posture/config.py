@@ -80,6 +80,17 @@ SEGMENT_SCORE_WEIGHTS = {
 }
 
 # ---------------------------------------------------------------------------
+# MediaPipe ear landmark stabilization.
+# In side-view photos, MediaPipe can place the ear landmark slightly forward on
+# the face/hair contour. If the rest of the body reference line is already
+# straight and only E-S is marginally over the threshold, snap the head point
+# back to the reference line. Larger forward-head offsets still stay bad.
+# ---------------------------------------------------------------------------
+
+HEAD_LANDMARK_SNAP_DEGREES = 14.0
+HEAD_LANDMARK_BODY_ALIGNMENT_DEGREES = 5.0
+
+# ---------------------------------------------------------------------------
 # Scoring weights (must sum to 100)
 # ---------------------------------------------------------------------------
 

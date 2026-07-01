@@ -13,6 +13,8 @@ from dataclasses import dataclass, field
 from typing import List, Tuple
 
 from posture.config import (
+    HEAD_LANDMARK_BODY_ALIGNMENT_DEGREES,
+    HEAD_LANDMARK_SNAP_DEGREES,
     LEFT_SIDE_IDS,
     PROFILE_VISIBILITY_THRESHOLD,
     RIGHT_SIDE_IDS,
@@ -47,6 +49,15 @@ class ProfilePartResult:
     visible: bool
     visibility: float
     proxy: str
+
+
+@dataclass(frozen=True)
+class LandmarkPoint:
+    """Minimal landmark-like point used for stabilized keypoints."""
+
+    x: float
+    y: float
+    visibility: float
 
 
 @dataclass
@@ -234,7 +245,41 @@ def reference_line_x(points) -> float:
     return (values[mid - 1] + values[mid]) / 2.0
 
 
-def check_profile_parts(landmarks, side_ids: dict) -> Tuple[bool, List[str], List[ProfilePartResult]]:
+def stabilize_ear_point(raw_ear, shoulder, hip, knee, ankle, reference_x: float):
+    """Correct small side-view ear drift caused by MediaPipe landmark noise.
+
+    The correction is intentionally narrow: it only applies when shoulder,
+    hip, knee, and ankle are already close to the vertical reference line, and
+    the raw ear deviation is just beyond the E-S threshold. Clear forward-head
+    offsets remain unmodified and still score as bad.
+    """
+    body_deviations = [
+        calc_reference_deviation(shoulder, hip, reference_x),
+        calc_reference_deviation(hip, knee, reference_x),
+        calc_reference_deviation(knee, ankle, reference_x),
+    ]
+    body_is_stable = all(
+        angle <= HEAD_LANDMARK_BODY_ALIGNMENT_DEGREES
+        for angle in body_deviations
+    )
+    ear_deviation = calc_reference_deviation(raw_ear, shoulder, reference_x)
+    marginal_ear_drift = (
+        SEGMENT_THRESHOLDS["ear_shoulder"]
+        < ear_deviation
+        <= HEAD_LANDMARK_SNAP_DEGREES
+    )
+
+    if body_is_stable and marginal_ear_drift:
+        return LandmarkPoint(
+            x=reference_x,
+            y=raw_ear.y,
+            visibility=raw_ear.visibility,
+        )
+
+    return raw_ear
+
+
+def check_profile_parts(landmarks, side_ids: dict, ear=None) -> Tuple[bool, List[str], List[ProfilePartResult]]:
     """Check whether teacher-required side-profile parts are visible.
 
     MediaPipe Pose has no explicit neck or buttock landmark. For collection
@@ -243,7 +288,7 @@ def check_profile_parts(landmarks, side_ids: dict) -> Tuple[bool, List[str], Lis
     quality gate aligned with the teacher's anatomical checklist while staying
     inside the available landmark set.
     """
-    ear = landmarks[side_ids["ear"]]
+    ear = ear or landmarks[side_ids["ear"]]
     shoulder = landmarks[side_ids["shoulder"]]
     hip = landmarks[side_ids["hip"]]
     knee = landmarks[side_ids["knee"]]
@@ -302,11 +347,19 @@ def analyze_posture(landmarks) -> PostureResult:
     result.side = side_name
 
     # ---- 2. keypoints ----
-    ear = landmarks[side_ids["ear"]]
     shoulder = landmarks[side_ids["shoulder"]]
     hip = landmarks[side_ids["hip"]]
     knee = landmarks[side_ids["knee"]]
     ankle = landmarks[side_ids["ankle"]]
+    reference_x = reference_line_x([shoulder, hip, knee, ankle])
+    ear = stabilize_ear_point(
+        landmarks[side_ids["ear"]],
+        shoulder,
+        hip,
+        knee,
+        ankle,
+        reference_x,
+    )
 
     result.keypoint_coords = [
         (ear.x, ear.y),
@@ -316,7 +369,7 @@ def analyze_posture(landmarks) -> PostureResult:
         (ankle.x, ankle.y),
     ]
 
-    profile_complete, missing_profile_parts, profile_parts = check_profile_parts(landmarks, side_ids)
+    profile_complete, missing_profile_parts, profile_parts = check_profile_parts(landmarks, side_ids, ear=ear)
     result.profile_complete = profile_complete
     result.missing_profile_parts = missing_profile_parts
     result.profile_parts = profile_parts
@@ -354,7 +407,6 @@ def analyze_posture(landmarks) -> PostureResult:
         )
 
     # ---- 4. teacher reference-line segment deviations ----
-    reference_x = reference_line_x([shoulder, hip, knee, ankle])
     segment_pairs = [
         ("ear_shoulder", ear, shoulder),
         ("shoulder_hip", shoulder, hip),

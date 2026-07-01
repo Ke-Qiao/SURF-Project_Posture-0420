@@ -90,6 +90,30 @@ class PipelineContractTests(unittest.TestCase):
         self.assertGreater(es_angle["angle"], es_angle["threshold"])
         self.assertLess(payload["score"], 100.0)
 
+    def test_marginal_ear_landmark_drift_is_stabilized(self):
+        landmarks = _blank_landmarks()
+        for idx, x, y, visibility in [
+            (7, 0.54, 0.26, 0.98),
+            (8, 0.56, 0.26, 0.20),
+            (11, 0.50, 0.44, 0.98),
+            (12, 0.51, 0.44, 0.20),
+            (23, 0.50, 0.66, 0.98),
+            (24, 0.51, 0.66, 0.20),
+            (25, 0.50, 0.84, 0.98),
+            (26, 0.51, 0.84, 0.20),
+            (27, 0.50, 0.98, 0.98),
+            (28, 0.51, 0.98, 0.20),
+        ]:
+            landmarks[idx] = _landmark(x, y, visibility)
+
+        payload = result_to_dict(analyze_posture(landmarks))
+
+        es_angle = next(item for item in payload["segment_angles"] if item["name"] == "ear_shoulder")
+        ear = next(item for item in payload["keypoints"] if item["name"] == "ear")
+        self.assertEqual(0.0, es_angle["angle"])
+        self.assertAlmostEqual(0.50, ear["x"])
+        self.assertEqual("Good", payload["posture"])
+
     def test_segment_angle_uses_green_reference_line_not_local_segment_only(self):
         landmarks = _blank_landmarks()
         for idx, x, y, visibility in [
