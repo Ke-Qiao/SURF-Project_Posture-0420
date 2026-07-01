@@ -7,7 +7,8 @@ posture dataset task. It does not modify the original ZIP. It:
 2. normalizes known ``good`` / ``bad`` images into local working folders;
 3. writes a source manifest with duplicates and label inference notes;
 4. calls the existing Flask backend review and batch endpoints;
-5. downloads the backend-generated ZIP reports.
+5. downloads the backend-generated ZIP reports;
+6. materializes one YOLO-pose JSON sidecar for each processed image.
 
 Usage
 -----
@@ -45,7 +46,7 @@ DEFAULT_OUTPUT = PROJECT_DIR / "temp" / "documents-export-2026-07-01-processed"
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 ZIP_EXTS = {".zip"}
 KNOWN_LABELS = {"good", "bad"}
-APP_VERSION = "week-02-reference-angle-v3"
+APP_VERSION = "week-02-yolo-pose-labels-v1"
 
 
 @dataclass
@@ -57,6 +58,7 @@ class SourceImage:
     sha256: str
     duplicate_of: str = ""
     normalized_path: Path | None = None
+    pose_label_path: Path | None = None
 
 
 def parse_args() -> argparse.Namespace:
@@ -105,6 +107,7 @@ def main() -> int:
     print(f"Unlabeled: {len(unlabeled)}")
 
     backend_results: dict[str, dict] = {}
+    pose_label_count = 0
     server_process: subprocess.Popen | None = None
     base_url = args.base_url.rstrip("/")
 
@@ -141,7 +144,14 @@ def main() -> int:
                     timeout=args.timeout,
                 )
                 backend_results["batch"] = batch_payload
-                download_backend_zip(base_url, batch_payload["download_url"], paths["exports"] / "batch_export.zip", args.timeout)
+                batch_zip_path = paths["exports"] / "batch_export.zip"
+                download_backend_zip(base_url, batch_payload["download_url"], batch_zip_path, args.timeout)
+                pose_label_count = materialize_pose_label_jsons(
+                    batch_zip_path,
+                    normalized_images,
+                    paths["pose_labels"],
+                )
+                write_manifest(normalized_images, paths["manifest"])
 
     finally:
         if server_process is not None:
@@ -162,6 +172,7 @@ def main() -> int:
         good_count=len(known_good),
         bad_count=len(known_bad),
         unlabeled_count=len(unlabeled),
+        pose_label_count=pose_label_count,
         backend_results=backend_results,
         dry_run=args.dry_run,
     )
@@ -191,6 +202,7 @@ def prepare_output_dirs(output_dir: Path) -> dict[str, Path]:
         "manifest": output_dir / "manifests" / "source_manifest.csv",
         "backend": output_dir / "backend",
         "exports": output_dir / "exports",
+        "pose_labels": output_dir / "pose_labels",
         "logs": output_dir / "logs",
         "summary": output_dir / "summary.md",
     }
@@ -308,6 +320,7 @@ def write_manifest(images: list[SourceImage], csv_path: Path) -> None:
         "duplicate_of",
         "extracted_path",
         "normalized_path",
+        "pose_label_path",
     ]
     csv_path.parent.mkdir(parents=True, exist_ok=True)
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
@@ -323,8 +336,95 @@ def write_manifest(images: list[SourceImage], csv_path: Path) -> None:
                     "duplicate_of": item.duplicate_of,
                     "extracted_path": str(item.extracted_path),
                     "normalized_path": "" if item.normalized_path is None else str(item.normalized_path),
+                    "pose_label_path": "" if item.pose_label_path is None else str(item.pose_label_path),
                 }
             )
+
+
+def materialize_pose_label_jsons(batch_zip_path: Path, images: list[SourceImage], output_dir: Path) -> int:
+    """Copy backend YOLO-pose JSON labels next to every normalized image.
+
+    The backend batch ZIP stores labels under ``pose_labels/<category>/``. This
+    script additionally writes:
+    - ``pose_labels/<inferred-label>/<image-stem>.json`` for a clean label tree;
+    - ``normalized/<inferred-label>/<image-stem>.json`` as a sidecar file.
+    """
+    if not batch_zip_path.is_file():
+        return 0
+
+    unique_images = [item for item in images if item.normalized_path is not None]
+    by_index = {index: item for index, item in enumerate(unique_images, start=1)}
+    by_name: dict[str, list[SourceImage]] = {}
+    for item in unique_images:
+        if item.normalized_path is None:
+            continue
+        by_name.setdefault(item.normalized_path.name, []).append(item)
+
+    count = 0
+    with zipfile.ZipFile(batch_zip_path) as zf:
+        for member in sorted(zf.namelist()):
+            if not member.startswith("pose_labels/") or not member.endswith(".json"):
+                continue
+            try:
+                payload = json.loads(zf.read(member).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                continue
+
+            item = _source_image_for_pose_label(payload, by_index, by_name)
+            if item is None:
+                continue
+            if item.normalized_path is None:
+                continue
+
+            label = item.label if item.label in {"good", "bad"} else "unlabeled"
+            label_path = output_dir / label / f"{item.normalized_path.stem}.json"
+            sidecar_path = item.normalized_path.with_suffix(".json")
+            payload = _with_local_pose_label_metadata(
+                payload,
+                normalized_image=str(item.normalized_path),
+                sidecar_label=str(sidecar_path),
+                inferred_label=label,
+                source_path=item.source_path,
+            )
+            write_json(label_path, payload)
+            write_json(sidecar_path, payload)
+            item.pose_label_path = label_path
+            count += 1
+    return count
+
+
+def _pose_label_source_name(payload: dict) -> str:
+    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+    image = payload.get("image", {}) if isinstance(payload, dict) else {}
+    return str(metadata.get("source_name") or image.get("file_name") or "")
+
+
+def _source_image_for_pose_label(
+    payload: dict,
+    by_index: dict[int, SourceImage],
+    by_name: dict[str, list[SourceImage]],
+) -> SourceImage | None:
+    metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+    original_file = str(metadata.get("original_file", ""))
+    match = re.match(r"^\d{4}-", Path(original_file).name)
+    if match:
+        source = by_index.get(int(match.group(0)[:4]))
+        if source is not None:
+            return source
+
+    source_name = _pose_label_source_name(payload)
+    candidates = by_name.get(Path(source_name).name, [])
+    if candidates:
+        return candidates.pop(0)
+    return None
+
+
+def _with_local_pose_label_metadata(payload: dict, **metadata) -> dict:
+    result = dict(payload)
+    merged = dict(result.get("metadata", {}))
+    merged.update({key: value for key, value in metadata.items() if value != ""})
+    result["metadata"] = merged
+    return result
 
 
 def backend_ready(base_url: str) -> bool:
@@ -414,6 +514,7 @@ def write_summary(
     good_count: int,
     bad_count: int,
     unlabeled_count: int,
+    pose_label_count: int,
     backend_results: dict[str, dict],
     dry_run: bool,
 ) -> None:
@@ -427,12 +528,15 @@ def write_summary(
         f"- Known good images: {good_count}",
         f"- Known bad images: {bad_count}",
         f"- Unlabeled images: {unlabeled_count}",
+        f"- YOLO-pose JSON labels materialized: {pose_label_count}",
         f"- Dry run: {dry_run}",
         "",
         "## Outputs",
         "",
         "- `manifests/source_manifest.csv`: source path, inferred label, duplicates, normalized path.",
         "- `normalized/good`, `normalized/bad`, `normalized/unlabeled`: local working copies.",
+        "- `normalized/<label>/*.json`: YOLO-pose sidecar labels for each processed image when backend processing ran.",
+        "- `pose_labels/<label>`: centralized YOLO-pose JSON label copies.",
         "- `exports/review_export.zip`: labeled good/bad review output when backend processing ran.",
         "- `exports/batch_export.zip`: all-image standing/sitting/incomplete triage output when backend processing ran.",
         "- `backend/backend_responses.json`: backend JSON summaries.",

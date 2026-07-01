@@ -21,7 +21,7 @@ git diff --check
 
 ## Web 检查
 
-- `/health` 返回 `week-02-reference-angle-v3`。
+- `/health` 返回 `week-02-yolo-pose-labels-v1`。
 - HTTPS 模式下 `/health` 返回 `"https": true`。
 - image、video、webcam、batch、review 五种模式仍可切换。
 - Webcam 面板中 `Start computer camera` 和 `Start phone camera` 都显示出来。
@@ -36,6 +36,7 @@ git diff --check
 - ZIP 包含：
   - `original/`
   - `mediapipe/`
+  - `pose_labels/`
   - `manifest.csv`
   - `reference.json`
   - `summary.md`
@@ -46,6 +47,8 @@ git diff --check
   - `original/bad/`
   - `annotated/good/`
   - `annotated/bad/`
+  - `pose_labels/good/`
+  - `pose_labels/bad/`
   - `review_report.csv`
   - `metrics.json`
   - `summary.md`
@@ -55,6 +58,7 @@ git diff --check
 - `manifest.csv` 包含 collector、subject_id、true_label。
 - `manifest.csv` 包含 profile_complete 和 missing_profile_parts。
 - `review_report.csv` 包含 true_label、predicted_label、evaluation_status、correct。
+- `pose_labels/` 中每张图片都有对应 YOLO-pose JSON，包含 ear、shoulder、hip、knee、ankle 五点像素坐标。
 - subject_id 不使用真实姓名。
 - 图片必须先给老师审核。
 - 只有审核通过的 clean side-view standing data 才上传 GitHub。

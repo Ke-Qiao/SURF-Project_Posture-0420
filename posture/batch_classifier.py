@@ -15,6 +15,7 @@ from posture.analyzer import analyze_posture, calc_angle
 from posture.config import LEFT_SIDE_IDS, RIGHT_SIDE_IDS
 from posture.pipeline import result_to_dict
 from posture.visualizer import append_analysis_footer, draw_analysis
+from posture.yolo_pose import build_yolo_pose_json
 
 
 CATEGORY_STANDING = "standing"
@@ -156,7 +157,7 @@ def classify_landmarks(landmarks) -> Classification:
     )
 
 
-def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchMediaResult, Any | None]:
+def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchMediaResult, Any | None, dict[str, Any] | None]:
     """Analyze and classify one image file."""
     frame = cv2.imread(image_path)
     if frame is None:
@@ -169,10 +170,18 @@ def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchM
                 reason="OpenCV could not read image",
             ),
             None,
+            None,
         )
 
+    height, width = frame.shape[:2]
     result, classification, annotated = _process_frame(detector, frame)
     posture_payload = result_to_dict(result)
+    pose_label = build_yolo_pose_json(
+        posture_payload,
+        image_width=width,
+        image_height=height,
+        image_filename=filename,
+    )
     posture_details = _posture_details(posture_payload)
     media_result = BatchMediaResult(
         filename=filename,
@@ -201,7 +210,7 @@ def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchM
         sitting_votes=1 if classification.category == CATEGORY_SITTING else 0,
         incomplete_votes=1 if classification.category == CATEGORY_INCOMPLETE else 0,
     )
-    return media_result, annotated
+    return media_result, annotated, pose_label
 
 
 def process_video_file(detector, video_path: str, filename: str, max_samples: int = MAX_VIDEO_SAMPLES) -> tuple[BatchMediaResult, Any | None]:
@@ -326,6 +335,7 @@ def render_summary_markdown(summary: dict[str, Any], rows: list[dict[str, Any]])
         f"- Standing: {counts.get(CATEGORY_STANDING, 0)}",
         f"- Sitting: {counts.get(CATEGORY_SITTING, 0)}",
         f"- Incomplete: {counts.get(CATEGORY_INCOMPLETE, 0)}",
+        "- Pose labels: per-image YOLO-pose JSON files are saved under `pose_labels/`.",
         "",
         "## First 20 Results",
         "",

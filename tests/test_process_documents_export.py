@@ -43,6 +43,100 @@ class ProcessDocumentsExportTests(unittest.TestCase):
             self.assertEqual(1, len([item for item in copied if item.label == "bad"]))
             self.assertEqual(1, len([item for item in copied if item.label == "unlabeled"]))
 
+    def test_materialize_pose_labels_writes_sidecar_json_for_each_normalized_image(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = processor.prepare_output_dirs(root / "out")
+            image_path = paths["normalized"] / "good" / "0001-student-a.jpg"
+            image_path.write_bytes(b"image")
+            source = processor.SourceImage(
+                source_path="Student/good/a.jpg",
+                participant="student",
+                label="good",
+                extracted_path=image_path,
+                sha256="abc",
+                normalized_path=image_path,
+            )
+
+            batch_zip = root / "batch_export.zip"
+            with zipfile.ZipFile(batch_zip, "w") as zf:
+                zf.writestr(
+                    "pose_labels/standing/0001-student-a.json",
+                    """
+                    {
+                      "format": "yolo-pose-json-v1",
+                      "image": {"file_name": "0001-student-a.jpg"},
+                      "metadata": {"source_name": "0001-student-a.jpg"},
+                      "annotations": []
+                    }
+                    """,
+                )
+
+            count = processor.materialize_pose_label_jsons(batch_zip, [source], paths["pose_labels"])
+
+            sidecar = image_path.with_suffix(".json")
+            centralized = paths["pose_labels"] / "good" / "0001-student-a.json"
+            self.assertEqual(1, count)
+            self.assertTrue(sidecar.is_file())
+            self.assertTrue(centralized.is_file())
+            self.assertEqual(centralized, source.pose_label_path)
+            self.assertIn('"inferred_label": "good"', sidecar.read_text())
+
+    def test_materialize_pose_labels_prefers_export_index_for_duplicate_names(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            paths = processor.prepare_output_dirs(root / "out")
+            good_path = paths["normalized"] / "good" / "0001-sample.jpg"
+            bad_path = paths["normalized"] / "bad" / "0001-sample.jpg"
+            good_path.parent.mkdir(parents=True, exist_ok=True)
+            bad_path.parent.mkdir(parents=True, exist_ok=True)
+            good_path.write_bytes(b"good")
+            bad_path.write_bytes(b"bad")
+            good_source = processor.SourceImage(
+                source_path="Student/good/sample.jpg",
+                participant="student",
+                label="good",
+                extracted_path=good_path,
+                sha256="good",
+                normalized_path=good_path,
+            )
+            bad_source = processor.SourceImage(
+                source_path="Student/bad/sample.jpg",
+                participant="student",
+                label="bad",
+                extracted_path=bad_path,
+                sha256="bad",
+                normalized_path=bad_path,
+            )
+
+            batch_zip = root / "batch_export.zip"
+            with zipfile.ZipFile(batch_zip, "w") as zf:
+                zf.writestr(
+                    "pose_labels/standing/0002-0001-sample.json",
+                    """
+                    {
+                      "format": "yolo-pose-json-v1",
+                      "image": {"file_name": "0001-sample.jpg"},
+                      "metadata": {
+                        "source_name": "0001-sample.jpg",
+                        "original_file": "standing/0002-0001-sample.jpg"
+                      },
+                      "annotations": []
+                    }
+                    """,
+                )
+
+            count = processor.materialize_pose_label_jsons(
+                batch_zip,
+                [good_source, bad_source],
+                paths["pose_labels"],
+            )
+
+            self.assertEqual(1, count)
+            self.assertFalse(good_path.with_suffix(".json").exists())
+            self.assertTrue(bad_path.with_suffix(".json").exists())
+            self.assertEqual(paths["pose_labels"] / "bad" / "0001-sample.json", bad_source.pose_label_path)
+
 
 if __name__ == "__main__":
     unittest.main()

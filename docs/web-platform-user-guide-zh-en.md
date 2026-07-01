@@ -303,6 +303,7 @@ After 10 valid captures, the downloaded ZIP contains:
 ```text
 original/
 mediapipe/
+pose_labels/
 manifest.csv
 reference.json
 summary.md
@@ -312,6 +313,7 @@ summary.md
 | --- | --- | --- |
 | `original/` | Original webcam frames. | 原始摄像头图片。 |
 | `mediapipe/` | Processed frames with MediaPipe skeleton, green reference line, and current body line. | 带 MediaPipe 骨架、绿色参考线和当前身体线的处理图。 |
+| `pose_labels/` | One YOLO-pose JSON file per image. Each JSON stores five keypoints in pixel coordinates and a normalized YOLO-pose label line. | 每张图一个 YOLO-pose JSON，保存五个关键点的像素坐标，并包含归一化 YOLO-pose label 行。 |
 | `manifest.csv` | Per-image metadata: collector, subject, label, prediction, score, visibility checklist, E-S/S-H/H-K/K-A segment angles, notes. | 每张图的元数据：采集者、subject、标签、预测、分数、部位可见性、E-S/S-H/H-K/K-A 分段角度、备注。 |
 | `reference.json` | Green reference skeleton used during collection. Default source is `fixed-good-posture-v1`. | 采集时使用的绿色参考骨架。默认 source 是 `fixed-good-posture-v1`。 |
 | `summary.md` | Human-readable export summary. | 人类可读的导出摘要。 |
@@ -465,6 +467,8 @@ original/good/
 original/bad/
 annotated/good/
 annotated/bad/
+pose_labels/good/
+pose_labels/bad/
 review_report.csv
 metrics.json
 summary.md

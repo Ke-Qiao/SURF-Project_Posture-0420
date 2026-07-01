@@ -68,7 +68,7 @@ class WebAppContractTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-02-reference-angle-v3", response.json["version"])
+        self.assertEqual("week-02-yolo-pose-labels-v1", response.json["version"])
         self.assertIn(response.json["host"], {"127.0.0.1", "0.0.0.0"})
         self.assertFalse(response.json["https"])
 
@@ -334,6 +334,7 @@ class WebAppContractTests(unittest.TestCase):
             names = set(exported.namelist())
             self.assertIn("original/01-original.jpg", names)
             self.assertIn("mediapipe/01-mediapipe.jpg", names)
+            self.assertIn("pose_labels/01-pose.json", names)
             self.assertIn("manifest.csv", names)
             self.assertIn("reference.json", names)
             self.assertIn("summary.md", names)
@@ -344,6 +345,8 @@ class WebAppContractTests(unittest.TestCase):
             self.assertIn("fengshuo,subject_001,good", manifest)
             reference_json = exported.read("reference.json").decode("utf-8")
             self.assertIn('"source": "fixed-good-posture-v1"', reference_json)
+            pose_json = exported.read("pose_labels/01-pose.json").decode("utf-8")
+            self.assertIn('"format": "yolo-pose-json-v1"', pose_json)
         download.close()
 
     def test_webcam_capture_rejects_stale_cached_frame(self):

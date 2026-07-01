@@ -31,6 +31,7 @@ from posture.batch_classifier import (
 from posture.detector import PoseDetector
 from posture.pipeline import annotate_frame, result_to_dict
 from posture.visualizer import append_analysis_footer
+from posture.yolo_pose import build_yolo_pose_json
 
 BASE_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = BASE_DIR.parent
@@ -41,7 +42,7 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-02-reference-angle-v3"
+APP_VERSION = "week-02-yolo-pose-labels-v1"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")
@@ -57,6 +58,7 @@ REVIEW_FIELDS = [
     "evaluation_status",
     "original_file",
     "annotated_file",
+    "pose_label_file",
 ] + [field for field in CSV_FIELDS if field != "filename"]
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
@@ -460,12 +462,26 @@ def _teacher_sources(selection: str) -> list[dict[str, str | Path]]:
     return sources
 
 
+def _write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _with_pose_label_metadata(pose_label: dict, **metadata) -> dict:
+    payload = dict(pose_label)
+    merged_metadata = dict(payload.get("metadata", {}))
+    merged_metadata.update({key: value for key, value in metadata.items() if value != ""})
+    payload["metadata"] = merged_metadata
+    return payload
+
+
 def _create_batch_export(token: str, sources: list[dict[str, str | Path]]) -> dict:
     export_dir = UPLOAD_ROOT / f"batch-export-{token}"
     export_dir.mkdir(parents=True, exist_ok=True)
     for category in CATEGORIES:
         (export_dir / category).mkdir(parents=True, exist_ok=True)
         (export_dir / "annotated" / category).mkdir(parents=True, exist_ok=True)
+        (export_dir / "pose_labels" / category).mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
     image_detector = None
@@ -480,11 +496,12 @@ def _create_batch_export(token: str, sources: list[dict[str, str | Path]]) -> di
             if media_type == "image":
                 if image_detector is None:
                     image_detector = PoseDetector(static_image_mode=True)
-                media_result, annotated = process_image_file(image_detector, str(path), display_name)
+                media_result, annotated, pose_label = process_image_file(image_detector, str(path), display_name)
             elif media_type == "video":
                 if video_detector is None:
                     video_detector = PoseDetector(static_image_mode=False)
                 media_result, annotated = process_video_file(video_detector, str(path), display_name)
+                pose_label = None
             else:
                 continue
 
@@ -492,9 +509,25 @@ def _create_batch_export(token: str, sources: list[dict[str, str | Path]]) -> di
             target_path = export_dir / media_result.category / export_name
             shutil.copy2(path, target_path)
 
+            annotated_file = ""
             if annotated is not None:
                 annotated_name = f"{Path(export_name).stem}.jpg"
-                cv2.imwrite(str(export_dir / "annotated" / media_result.category / annotated_name), annotated)
+                annotated_path = export_dir / "annotated" / media_result.category / annotated_name
+                cv2.imwrite(str(annotated_path), annotated)
+                annotated_file = str(annotated_path.relative_to(export_dir))
+
+            if pose_label is not None:
+                pose_label_path = export_dir / "pose_labels" / media_result.category / f"{Path(export_name).stem}.json"
+                _write_json(
+                    pose_label_path,
+                    _with_pose_label_metadata(
+                        pose_label,
+                        original_file=str(target_path.relative_to(export_dir)),
+                        annotated_file=annotated_file,
+                        category=media_result.category,
+                        source_name=display_name,
+                    ),
+                )
     finally:
         if image_detector is not None:
             image_detector.close()
@@ -529,6 +562,7 @@ def _create_review_export(token: str, sources: list[dict[str, str | Path]]) -> d
     for label in REVIEW_LABELS:
         (export_dir / "original" / label).mkdir(parents=True, exist_ok=True)
         (export_dir / "annotated" / label).mkdir(parents=True, exist_ok=True)
+        (export_dir / "pose_labels" / label).mkdir(parents=True, exist_ok=True)
 
     rows: list[dict] = []
     detector = None
@@ -540,7 +574,7 @@ def _create_review_export(token: str, sources: list[dict[str, str | Path]]) -> d
             display_name = str(source["name"])
             export_name = _export_filename(idx, display_name, path.suffix)
 
-            media_result, annotated = process_image_file(detector, str(path), display_name)
+            media_result, annotated, pose_label = process_image_file(detector, str(path), display_name)
             base_row = media_result.to_row()
             predicted_label = _prediction_label(base_row.get("posture", ""))
             evaluation_status = "evaluated" if predicted_label in REVIEW_LABELS else "needs_review"
@@ -555,6 +589,23 @@ def _create_review_export(token: str, sources: list[dict[str, str | Path]]) -> d
                 cv2.imwrite(str(annotated_path), annotated)
                 annotated_file = str(annotated_path.relative_to(export_dir))
 
+            pose_label_file = ""
+            if pose_label is not None:
+                pose_label_path = export_dir / "pose_labels" / true_label / f"{Path(export_name).stem}.json"
+                pose_label_file = str(pose_label_path.relative_to(export_dir))
+                _write_json(
+                    pose_label_path,
+                    _with_pose_label_metadata(
+                        pose_label,
+                        original_file=str(original_path.relative_to(export_dir)),
+                        annotated_file=annotated_file,
+                        true_label=true_label,
+                        predicted_label=predicted_label,
+                        evaluation_status=evaluation_status,
+                        source_name=display_name,
+                    ),
+                )
+
             row = {
                 "filename": display_name,
                 "true_label": true_label,
@@ -563,6 +614,7 @@ def _create_review_export(token: str, sources: list[dict[str, str | Path]]) -> d
                 "evaluation_status": evaluation_status,
                 "original_file": str(original_path.relative_to(export_dir)),
                 "annotated_file": annotated_file,
+                "pose_label_file": pose_label_file,
             }
             for field in CSV_FIELDS:
                 if field != "filename":
@@ -836,18 +888,38 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
     export_dir = UPLOAD_ROOT / f"webcam-captures-{token}"
     original_dir = export_dir / "original"
     annotated_dir = export_dir / "mediapipe"
+    pose_label_dir = export_dir / "pose_labels"
     original_dir.mkdir(parents=True, exist_ok=True)
     annotated_dir.mkdir(parents=True, exist_ok=True)
+    pose_label_dir.mkdir(parents=True, exist_ok=True)
 
     rows = []
     for capture in captures:
         index = int(capture["index"])
         original_path = original_dir / f"{index:02d}-original.jpg"
         annotated_path = annotated_dir / f"{index:02d}-mediapipe.jpg"
+        pose_label_path = pose_label_dir / f"{index:02d}-pose.json"
         original_path.write_bytes(capture["original_jpeg"])
         annotated_path.write_bytes(capture["annotated_jpeg"])
         result = capture["result"]
         metadata = capture.get("metadata", {})
+        _write_json(
+            pose_label_path,
+            _with_pose_label_metadata(
+                _pose_label_from_jpeg(
+                    capture["original_jpeg"],
+                    result,
+                    original_path.name,
+                ),
+                original_file=str(original_path.relative_to(export_dir)),
+                mediapipe_file=str(annotated_path.relative_to(export_dir)),
+                collector=metadata.get("collector", ""),
+                subject_id=metadata.get("subject_id", ""),
+                true_label=metadata.get("label", ""),
+                capture_source=metadata.get("source", ""),
+                captured_at=capture["captured_at"],
+            ),
+        )
         reference = metadata.get("reference", {})
         result_angles = _angles_by_name(result)
         result_segments = _segment_angles_by_name(result)
@@ -858,6 +930,7 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 "index": index,
                 "original_file": str(original_path.relative_to(export_dir)),
                 "mediapipe_file": str(annotated_path.relative_to(export_dir)),
+                "pose_label_file": str(pose_label_path.relative_to(export_dir)),
                 "collector": metadata.get("collector", ""),
                 "subject_id": metadata.get("subject_id", ""),
                 "true_label": metadata.get("label", ""),
@@ -945,6 +1018,7 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 f"- True label: {captures[0].get('metadata', {}).get('label', '') if captures else ''}",
                 f"- Capture source: {captures[0].get('metadata', {}).get('source', '') if captures else ''}",
                 "- Each capture includes the original webcam frame and the MediaPipe-processed frame.",
+                "- `pose_labels/` contains one YOLO-pose JSON label file per capture.",
                 "- `manifest.csv` contains collection labels and posture measurements for review.",
                 "- `reference.json` contains the green reference skeleton used during collection.",
                 "- This export is local-only and is not committed to Git.",
@@ -1005,6 +1079,24 @@ def _segment_reference_delta(result_angles: dict, reference_angles: dict, name: 
         return round(float(result_value) - float(reference_value), 1)
     except (TypeError, ValueError):
         return ""
+
+
+def _pose_label_from_jpeg(jpeg_bytes: bytes, result_payload: dict, image_filename: str) -> dict:
+    frame = cv2.imdecode(np.frombuffer(jpeg_bytes, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if frame is None:
+        return build_yolo_pose_json(
+            result_payload,
+            image_width=0,
+            image_height=0,
+            image_filename=image_filename,
+        )
+    height, width = frame.shape[:2]
+    return build_yolo_pose_json(
+        result_payload,
+        image_width=width,
+        image_height=height,
+        image_filename=image_filename,
+    )
 
 
 def _annotated_with_reference(jpeg_bytes: bytes, reference: dict) -> bytes:

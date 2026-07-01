@@ -89,6 +89,7 @@ class PostureResult:
     issues: List[str] = field(default_factory=list)
     advice: List[str] = field(default_factory=list)
     keypoint_coords: List[Tuple[float, float]] = field(default_factory=list)
+    keypoint_visibilities: List[float] = field(default_factory=list)
     profile_complete: bool = False
     missing_profile_parts: List[str] = field(default_factory=list)
     profile_parts: List[ProfilePartResult] = field(default_factory=list)
@@ -367,6 +368,13 @@ def analyze_posture(landmarks) -> PostureResult:
         (hip.x, hip.y),
         (knee.x, knee.y),
         (ankle.x, ankle.y),
+    ]
+    result.keypoint_visibilities = [
+        ear.visibility,
+        shoulder.visibility,
+        hip.visibility,
+        knee.visibility,
+        ankle.visibility,
     ]
 
     profile_complete, missing_profile_parts, profile_parts = check_profile_parts(landmarks, side_ids, ear=ear)

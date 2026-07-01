@@ -62,8 +62,17 @@ def result_to_dict(result: PostureResult) -> Dict[str, Any]:
             for part in result.profile_parts
         ],
         "keypoints": [
-            {"name": name, "x": round(x, 6), "y": round(y, 6)}
-            for name, (x, y) in zip(keypoint_names, result.keypoint_coords)
+            {
+                "name": name,
+                "x": round(x, 6),
+                "y": round(y, 6),
+                "visibility": round(float(visibility), 3),
+            }
+            for name, (x, y), visibility in zip(
+                keypoint_names,
+                result.keypoint_coords,
+                result.keypoint_visibilities,
+            )
         ],
         "angles": [
             {

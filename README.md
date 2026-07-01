@@ -139,10 +139,15 @@ The export contains:
 ```text
 original/
 mediapipe/
+pose_labels/
 manifest.csv
 reference.json
 summary.md
 ```
+
+`pose_labels/` contains one YOLO-pose JSON file per image. Each file stores the
+five posture keypoints `ear`, `shoulder`, `hip`, `knee`, and `ankle` as pixel
+coordinates plus a normalized YOLO-pose label line.
 
 ## Dataset Review Flow
 
