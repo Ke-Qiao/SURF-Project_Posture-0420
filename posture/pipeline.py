@@ -76,4 +76,16 @@ def result_to_dict(result: PostureResult) -> Dict[str, Any]:
             }
             for angle in result.angles
         ],
+        "segment_angles": [
+            {
+                "name": angle.name,
+                "label": angle.label,
+                "start": angle.start,
+                "end": angle.end,
+                "angle": angle.angle,
+                "threshold": angle.threshold,
+                "is_good": angle.is_good,
+            }
+            for angle in result.segment_angles
+        ],
     }

@@ -20,6 +20,7 @@ class WebAppContractTests(unittest.TestCase):
     def tearDown(self):
         web_app._VIDEO_UPLOADS.clear()
         web_app._BATCH_EXPORTS.clear()
+        web_app._REVIEW_EXPORTS.clear()
         web_app._WEBCAM_LATEST.clear()
         web_app._WEBCAM_CAPTURES.clear()
         web_app._WEBCAM_CAPTURE_ZIPS.clear()
@@ -44,6 +45,12 @@ class WebAppContractTests(unittest.TestCase):
                     "shoulder_hip_knee": 178.0,
                     "hip_knee_ankle": 176.0,
                 },
+                "segment_angles": {
+                    "ear_shoulder": 0.0,
+                    "shoulder_hip": 0.0,
+                    "hip_knee": 0.0,
+                    "knee_ankle": 0.0,
+                },
                 "source": "fixed-good-posture-v1",
                 "updated_at": "2026-06-23T00:00:00Z",
             },
@@ -61,7 +68,7 @@ class WebAppContractTests(unittest.TestCase):
 
         self.assertEqual(200, response.status_code)
         self.assertEqual("surf-posture-web", response.json["app"])
-        self.assertEqual("week-02-fixed-reference-v1", response.json["version"])
+        self.assertEqual("week-02-reference-angle-v3", response.json["version"])
         self.assertIn(response.json["host"], {"127.0.0.1", "0.0.0.0"})
         self.assertFalse(response.json["https"])
 
@@ -130,6 +137,75 @@ class WebAppContractTests(unittest.TestCase):
 
         self.assertEqual(404, response.status_code)
         self.assertIn("Batch export not found", response.json["error"])
+
+    def test_review_dataset_requires_labeled_images(self):
+        response = self.client.post("/api/review-dataset", data={})
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("Choose good or bad review images", response.json["error"])
+
+    def test_review_dataset_rejects_non_images(self):
+        response = self.client.post(
+            "/api/review-dataset",
+            data={"good_files": (io.BytesIO(b"not an image"), "notes.txt")},
+            content_type="multipart/form-data",
+        )
+
+        self.assertEqual(400, response.status_code)
+        self.assertIn("Unsupported review image type", response.json["error"])
+
+    def test_review_dataset_accepts_good_and_bad_images(self):
+        payload = {
+            "token": "unit-review",
+            "summary": {
+                "total": 2,
+                "evaluated": 2,
+                "precision": 1.0,
+                "recall": 1.0,
+                "f1": 1.0,
+            },
+            "rows": [],
+            "row_count": 2,
+            "download_url": "/api/review-download/unit-review",
+        }
+        with patch.object(web_app, "_create_review_export", return_value=payload):
+            response = self.client.post(
+                "/api/review-dataset",
+                data={
+                    "good_files": (io.BytesIO(b"good image"), "good.jpg"),
+                    "bad_files": (io.BytesIO(b"bad image"), "bad.jpg"),
+                },
+                content_type="multipart/form-data",
+            )
+
+        self.assertEqual(200, response.status_code)
+        self.assertEqual("/api/review-download/unit-review", response.json["download_url"])
+
+    def test_review_download_missing_token_returns_404(self):
+        response = self.client.get("/api/review-download/missing")
+
+        self.assertEqual(404, response.status_code)
+        self.assertIn("Dataset review export not found", response.json["error"])
+
+    def test_review_metrics_use_bad_as_positive_label(self):
+        summary = web_app._review_metrics(
+            [
+                {"true_label": "bad", "predicted_label": "bad", "evaluation_status": "evaluated"},
+                {"true_label": "bad", "predicted_label": "good", "evaluation_status": "evaluated"},
+                {"true_label": "good", "predicted_label": "bad", "evaluation_status": "evaluated"},
+                {"true_label": "good", "predicted_label": "good", "evaluation_status": "evaluated"},
+                {"true_label": "good", "predicted_label": "needs_review", "evaluation_status": "needs_review"},
+            ]
+        )
+
+        self.assertEqual("bad", summary["positive_label"])
+        self.assertEqual(5, summary["total"])
+        self.assertEqual(4, summary["evaluated"])
+        self.assertEqual(1, summary["needs_review"])
+        self.assertEqual({"tp": 1, "fp": 1, "tn": 1, "fn": 1}, summary["confusion_matrix"])
+        self.assertEqual(0.5, summary["precision"])
+        self.assertEqual(0.5, summary["recall"])
+        self.assertEqual(0.5, summary["f1"])
 
     def test_webcam_capture_requires_latest_frame(self):
         response = self.client.post("/api/webcam-capture", json=self.capture_payload())
@@ -229,6 +305,12 @@ class WebAppContractTests(unittest.TestCase):
                         {"name": "ear_shoulder_hip", "angle": 175.5},
                         {"name": "shoulder_hip_knee", "angle": 178.0},
                         {"name": "hip_knee_ankle", "angle": 176.0},
+                    ],
+                    "segment_angles": [
+                        {"name": "ear_shoulder", "angle": 0.0},
+                        {"name": "shoulder_hip", "angle": 1.0},
+                        {"name": "hip_knee", "angle": 2.0},
+                        {"name": "knee_ankle", "angle": 3.0},
                     ],
                 },
                 "stored_at": time.time(),

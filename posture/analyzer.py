@@ -3,7 +3,7 @@
 Responsibilities
     1. ``pick_side``       – auto-detect which body side faces the camera
     2. ``calc_angle``      – compute the angle at the middle of three points
-    3. ``analyze_posture`` – full pipeline: pick side → angles → score → advice
+    3. ``analyze_posture`` – full pipeline: pick side → reference segment angles → score
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ from posture.config import (
     LEFT_SIDE_IDS,
     PROFILE_VISIBILITY_THRESHOLD,
     RIGHT_SIDE_IDS,
-    SCORE_WEIGHTS,
+    SEGMENT_SCORE_WEIGHTS,
+    SEGMENT_THRESHOLDS,
     THRESHOLDS,
     VIEW_GATE,
 )
@@ -28,7 +29,7 @@ from posture.config import (
 
 @dataclass
 class AngleResult:
-    """Measurement for one body-segment angle."""
+    """Auxiliary joint-angle measurement."""
 
     name: str          # e.g. "ear_shoulder_hip"
     angle: float       # actual angle (degrees)
@@ -49,6 +50,19 @@ class ProfilePartResult:
 
 
 @dataclass
+class SegmentAngleResult:
+    """Deviation of one body segment from the vertical reference line."""
+
+    name: str
+    label: str
+    start: str
+    end: str
+    angle: float
+    threshold: float
+    is_good: bool
+
+
+@dataclass
 class PostureResult:
     """Complete posture-analysis output."""
 
@@ -58,6 +72,7 @@ class PostureResult:
     view_valid: bool = True
     message: str = ""
     angles: List[AngleResult] = field(default_factory=list)
+    segment_angles: List[SegmentAngleResult] = field(default_factory=list)
     score: float = 0.0                                       # 0–100
     overall_good: bool = True
     issues: List[str] = field(default_factory=list)
@@ -84,6 +99,33 @@ _ANGLE_INFO = {
     "hip_knee_ankle": {
         "label": "Knee Hyperextension",
         "advice": "Soften your knees slightly, avoid locking them",
+    },
+}
+
+_SEGMENT_INFO = {
+    "ear_shoulder": {
+        "label": "E-S",
+        "start": "ear",
+        "end": "shoulder",
+        "advice": "Keep your ear vertically aligned above your shoulder",
+    },
+    "shoulder_hip": {
+        "label": "S-H",
+        "start": "shoulder",
+        "end": "hip",
+        "advice": "Stack your shoulder over your hip",
+    },
+    "hip_knee": {
+        "label": "H-K",
+        "start": "hip",
+        "end": "knee",
+        "advice": "Keep your hip, knee, and ankle aligned from the side",
+    },
+    "knee_ankle": {
+        "label": "K-A",
+        "start": "knee",
+        "end": "ankle",
+        "advice": "Keep your knee vertically aligned above your ankle",
     },
 }
 
@@ -160,6 +202,38 @@ def calc_angle(a, b, c) -> float:
     return math.degrees(math.acos(cos_angle))
 
 
+def calc_vertical_deviation(a, b) -> float:
+    """Return one segment's deviation from the vertical reference line."""
+    dx = abs(a.x - b.x)
+    dy = abs(a.y - b.y)
+    if dx == 0 and dy == 0:
+        return 0.0
+    return math.degrees(math.atan2(dx, dy))
+
+
+def calc_reference_deviation(start, lower, reference_x: float) -> float:
+    """Return the tilt from a point to the next point on the reference line.
+
+    The teacher reference is a vertical green line. For segment E-S, for
+    example, we measure the angle from the current ear point to the shoulder
+    height on that vertical reference line. A perfectly aligned segment is 0°.
+    """
+    dx = abs(start.x - reference_x)
+    dy = abs(start.y - lower.y)
+    if dx == 0 and dy == 0:
+        return 0.0
+    return math.degrees(math.atan2(dx, dy))
+
+
+def reference_line_x(points) -> float:
+    """Use shoulder/hip/knee/ankle median x as the green reference axis."""
+    values = sorted(point.x for point in points)
+    mid = len(values) // 2
+    if len(values) % 2:
+        return values[mid]
+    return (values[mid - 1] + values[mid]) / 2.0
+
+
 def check_profile_parts(landmarks, side_ids: dict) -> Tuple[bool, List[str], List[ProfilePartResult]]:
     """Check whether teacher-required side-profile parts are visible.
 
@@ -201,12 +275,10 @@ def check_profile_parts(landmarks, side_ids: dict) -> Tuple[bool, List[str], Lis
 def analyze_posture(landmarks) -> PostureResult:
     """Run the full posture-analysis pipeline.
 
-    Steps
-        1. Pick the body side facing the camera.
-        2. Extract 5 keypoints (ear / shoulder / hip / knee / ankle).
-        3. Compute 3 joint angles.
-        4. Score each angle against its threshold.
-        5. Produce a weighted overall score and advice list.
+    The teacher-facing Good/Bad decision is based on four segment deviations
+    from a vertical green reference line: E-S, S-H, H-K, and K-A. A perfect
+    reference-aligned posture is 0 degrees; the current conservative threshold
+    is 10 degrees.
     """
     result = PostureResult()
 
@@ -261,7 +333,7 @@ def analyze_posture(landmarks) -> PostureResult:
         ("hip_knee_ankle", hip, knee, ankle),
     ]
 
-    total_score = 100.0
+    segment_score = 100.0
 
     for name, pt_a, pt_b, pt_c in angle_triplets:
         angle = calc_angle(pt_a, pt_b, pt_c)
@@ -281,16 +353,44 @@ def analyze_posture(landmarks) -> PostureResult:
             )
         )
 
+    # ---- 4. teacher reference-line segment deviations ----
+    reference_x = reference_line_x([shoulder, hip, knee, ankle])
+    segment_pairs = [
+        ("ear_shoulder", ear, shoulder),
+        ("shoulder_hip", shoulder, hip),
+        ("hip_knee", hip, knee),
+        ("knee_ankle", knee, ankle),
+    ]
+
+    for name, pt_a, pt_b in segment_pairs:
+        angle = calc_reference_deviation(pt_a, pt_b, reference_x)
+        threshold = SEGMENT_THRESHOLDS[name]
+        is_good = angle <= threshold
+        info = _SEGMENT_INFO[name]
+
+        result.segment_angles.append(
+            SegmentAngleResult(
+                name=name,
+                label=info["label"],
+                start=info["start"],
+                end=info["end"],
+                angle=round(angle, 1),
+                threshold=threshold,
+                is_good=is_good,
+            )
+        )
+
         if not is_good:
             result.overall_good = False
-            result.issues.append(info["label"])
-            result.advice.append(info["advice"])
+            if info["label"] not in result.issues:
+                result.issues.append(info["label"])
+            if info["advice"] not in result.advice:
+                result.advice.append(info["advice"])
 
-            # proportional deduction: fully lost at threshold + 30°
-            weight = SCORE_WEIGHTS[name]
-            excess = deviation - threshold
+            weight = SEGMENT_SCORE_WEIGHTS[name]
+            excess = angle - threshold
             deduction = min(weight, weight * excess / 30.0)
-            total_score -= deduction
+            segment_score -= deduction
 
-    result.score = round(max(0.0, total_score), 1)
+    result.score = round(max(0.0, segment_score), 1)
     return result

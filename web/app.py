@@ -41,17 +41,30 @@ TEACHER_IMAGE_ROOT = WORKSPACE_DIR / "Provided elemnets" / "archive" / "images"
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".m4v"}
-APP_VERSION = "week-02-fixed-reference-v1"
+APP_VERSION = "week-02-reference-angle-v3"
 WEBCAM_CAPTURE_TARGET = 10
 WEBCAM_LATEST_MAX_AGE_SECONDS = 8
 REFERENCE_POINT_NAMES = ("ear", "shoulder", "hip", "knee", "ankle")
 ANGLE_FIELD_NAMES = ("ear_shoulder_hip", "shoulder_hip_knee", "hip_knee_ankle")
+SEGMENT_FIELD_NAMES = ("ear_shoulder", "shoulder_hip", "hip_knee", "knee_ankle")
+REVIEW_LABELS = ("good", "bad")
+REVIEW_POSITIVE_LABEL = "bad"
+REVIEW_FIELDS = [
+    "filename",
+    "true_label",
+    "predicted_label",
+    "correct",
+    "evaluation_status",
+    "original_file",
+    "annotated_file",
+] + [field for field in CSV_FIELDS if field != "filename"]
 
 app = Flask(__name__, static_folder=str(BASE_DIR / "static"), static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
 _VIDEO_UPLOADS: dict[str, Path] = {}
 _BATCH_EXPORTS: dict[str, Path] = {}
+_REVIEW_EXPORTS: dict[str, Path] = {}
 _WEBCAM_CAPTURE_LOCK = Lock()
 _WEBCAM_LATEST: dict = {}
 _WEBCAM_CAPTURES: list[dict] = []
@@ -199,7 +212,6 @@ def analyze_image():
     try:
         detector = PoseDetector(static_image_mode=True)
         result = annotate_frame(detector, frame, show_text=False)
-        frame = append_analysis_footer(frame, result)
         jpeg = _encode_jpeg(frame)
         encoded = base64.b64encode(jpeg).decode("ascii")
         return jsonify(
@@ -286,6 +298,53 @@ def batch_download(token: str):
     path = _BATCH_EXPORTS.get(token)
     if path is None or not path.exists():
         return _json_error("Batch export not found.", 404)
+    return send_file(path, as_attachment=True, download_name=path.name)
+
+
+@app.post("/api/review-dataset")
+def review_dataset():
+    """Review labeled good/bad images and compute baseline classification metrics."""
+    token = uuid.uuid4().hex
+    upload_dir = UPLOAD_ROOT / f"review-upload-{token}"
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    sources: list[dict[str, str | Path]] = []
+
+    for label, field_name in (("good", "good_files"), ("bad", "bad_files")):
+        label_dir = upload_dir / label
+        label_dir.mkdir(parents=True, exist_ok=True)
+        for uploaded in request.files.getlist(field_name):
+            if not uploaded.filename:
+                continue
+            ext = _suffix(uploaded.filename)
+            if ext not in IMAGE_EXTS:
+                return _json_error(f"Unsupported review image type: {ext or '(none)'}", 400)
+            path = label_dir / f"{uuid.uuid4().hex}{ext}"
+            uploaded.save(path)
+            sources.append(
+                {
+                    "path": path,
+                    "name": Path(uploaded.filename).name,
+                    "true_label": label,
+                }
+            )
+
+    if not sources:
+        return _json_error("Choose good or bad review images.", 400)
+
+    try:
+        payload = _create_review_export(token, sources)
+    except Exception as exc:
+        return _json_error(_runtime_error_message(), 503, detail=str(exc))
+
+    return jsonify(payload)
+
+
+@app.get("/api/review-download/<token>")
+def review_download(token: str):
+    """Download one completed dataset review ZIP."""
+    path = _REVIEW_EXPORTS.get(token)
+    if path is None or not path.exists():
+        return _json_error("Dataset review export not found.", 404)
     return send_file(path, as_attachment=True, download_name=path.name)
 
 
@@ -465,6 +524,202 @@ def _create_batch_export(token: str, sources: list[dict[str, str | Path]]) -> di
     }
 
 
+def _create_review_export(token: str, sources: list[dict[str, str | Path]]) -> dict:
+    export_dir = UPLOAD_ROOT / f"dataset-review-{token}"
+    for label in REVIEW_LABELS:
+        (export_dir / "original" / label).mkdir(parents=True, exist_ok=True)
+        (export_dir / "annotated" / label).mkdir(parents=True, exist_ok=True)
+
+    rows: list[dict] = []
+    detector = None
+    try:
+        detector = PoseDetector(static_image_mode=True)
+        for idx, source in enumerate(sources, 1):
+            path = Path(source["path"])
+            true_label = str(source["true_label"])
+            display_name = str(source["name"])
+            export_name = _export_filename(idx, display_name, path.suffix)
+
+            media_result, annotated = process_image_file(detector, str(path), display_name)
+            base_row = media_result.to_row()
+            predicted_label = _prediction_label(base_row.get("posture", ""))
+            evaluation_status = "evaluated" if predicted_label in REVIEW_LABELS else "needs_review"
+            correct = predicted_label == true_label if evaluation_status == "evaluated" else ""
+
+            original_path = export_dir / "original" / true_label / export_name
+            shutil.copy2(path, original_path)
+            annotated_file = ""
+            if annotated is not None:
+                annotated_name = f"{Path(export_name).stem}.jpg"
+                annotated_path = export_dir / "annotated" / true_label / annotated_name
+                cv2.imwrite(str(annotated_path), annotated)
+                annotated_file = str(annotated_path.relative_to(export_dir))
+
+            row = {
+                "filename": display_name,
+                "true_label": true_label,
+                "predicted_label": predicted_label,
+                "correct": correct,
+                "evaluation_status": evaluation_status,
+                "original_file": str(original_path.relative_to(export_dir)),
+                "annotated_file": annotated_file,
+            }
+            for field in CSV_FIELDS:
+                if field != "filename":
+                    row[field] = base_row.get(field, "")
+            rows.append(row)
+    finally:
+        if detector is not None:
+            detector.close()
+
+    summary = _review_metrics(rows)
+    csv_path = export_dir / "review_report.csv"
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=REVIEW_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    metrics_path = export_dir / "metrics.json"
+    metrics_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+    summary_path = export_dir / "summary.md"
+    summary_path.write_text(_render_review_summary_markdown(summary, rows), encoding="utf-8")
+
+    zip_path = UPLOAD_ROOT / f"surf-posture-review-{token}.zip"
+    _zip_directory(export_dir, zip_path)
+    _REVIEW_EXPORTS[token] = zip_path
+
+    return {
+        "token": token,
+        "summary": summary,
+        "rows": rows[:100],
+        "row_count": len(rows),
+        "download_url": f"/api/review-download/{token}",
+    }
+
+
+def _prediction_label(posture: str) -> str:
+    value = str(posture or "").strip().lower()
+    if value.startswith("good"):
+        return "good"
+    if value.startswith("bad"):
+        return "bad"
+    return "needs_review"
+
+
+def _review_metrics(rows: list[dict]) -> dict:
+    total = len(rows)
+    evaluated_rows = [row for row in rows if row.get("evaluation_status") == "evaluated"]
+    needs_review = total - len(evaluated_rows)
+    tp = fp = tn = fn = 0
+    correct = 0
+    true_counts = {label: 0 for label in REVIEW_LABELS}
+    predicted_counts = {label: 0 for label in (*REVIEW_LABELS, "needs_review")}
+
+    for row in rows:
+        true_label = row.get("true_label")
+        predicted_label = row.get("predicted_label")
+        if true_label in true_counts:
+            true_counts[true_label] += 1
+        if predicted_label in predicted_counts:
+            predicted_counts[predicted_label] += 1
+
+        if row.get("evaluation_status") != "evaluated":
+            continue
+        if predicted_label == true_label:
+            correct += 1
+        if true_label == REVIEW_POSITIVE_LABEL and predicted_label == REVIEW_POSITIVE_LABEL:
+            tp += 1
+        elif true_label != REVIEW_POSITIVE_LABEL and predicted_label == REVIEW_POSITIVE_LABEL:
+            fp += 1
+        elif true_label != REVIEW_POSITIVE_LABEL and predicted_label != REVIEW_POSITIVE_LABEL:
+            tn += 1
+        elif true_label == REVIEW_POSITIVE_LABEL and predicted_label != REVIEW_POSITIVE_LABEL:
+            fn += 1
+
+    precision = _safe_ratio(tp, tp + fp)
+    recall = _safe_ratio(tp, tp + fn)
+    return {
+        "total": total,
+        "evaluated": len(evaluated_rows),
+        "needs_review": needs_review,
+        "correct": correct,
+        "positive_label": REVIEW_POSITIVE_LABEL,
+        "accuracy": _safe_ratio(correct, len(evaluated_rows)),
+        "precision": precision,
+        "recall": recall,
+        "f1": _safe_ratio(2 * precision * recall, precision + recall),
+        "confusion_matrix": {
+            "tp": tp,
+            "fp": fp,
+            "tn": tn,
+            "fn": fn,
+        },
+        "true_counts": true_counts,
+        "predicted_counts": predicted_counts,
+        "map": None,
+        "map_note": (
+            "mAP is not computed by this rule-based review because it requires "
+            "ground-truth boxes/keypoints and detector confidence outputs."
+        ),
+    }
+
+
+def _safe_ratio(numerator: float, denominator: float) -> float:
+    return round(numerator / denominator, 3) if denominator else 0.0
+
+
+def _render_review_summary_markdown(summary: dict, rows: list[dict]) -> str:
+    matrix = summary["confusion_matrix"]
+    lines = [
+        "# SURF Dataset Review Summary",
+        "",
+        "This is a rule-based baseline review for labeled good/bad posture photos.",
+        "It is intended for dataset cleaning and meeting evidence, not final model evaluation.",
+        "",
+        f"- Total images: {summary['total']}",
+        f"- Evaluated good/bad images: {summary['evaluated']}",
+        f"- Needs manual review: {summary['needs_review']}",
+        f"- Positive label for Precision/Recall/F1: `{summary['positive_label']}`",
+        f"- Accuracy: {summary['accuracy']}",
+        f"- Precision: {summary['precision']}",
+        f"- Recall: {summary['recall']}",
+        f"- F1: {summary['f1']}",
+        f"- mAP: not computed. {summary['map_note']}",
+        "",
+        "## Confusion Matrix",
+        "",
+        "| Metric | Count |",
+        "| --- | ---: |",
+        f"| TP | {matrix['tp']} |",
+        f"| FP | {matrix['fp']} |",
+        f"| TN | {matrix['tn']} |",
+        f"| FN | {matrix['fn']} |",
+        "",
+        "## First 30 Results",
+        "",
+        "| File | True | Predicted | Status | Correct | Posture | Score | Missing Parts |",
+        "| --- | --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    for row in rows[:30]:
+        missing = str(row.get("missing_profile_parts", "")).replace("|", "/")
+        lines.append(
+            "| {filename} | {true_label} | {predicted_label} | {evaluation_status} | "
+            "{correct} | {posture} | {score} | {missing} |".format(
+                filename=str(row.get("filename", "")).replace("|", "/"),
+                true_label=row.get("true_label", ""),
+                predicted_label=row.get("predicted_label", ""),
+                evaluation_status=row.get("evaluation_status", ""),
+                correct=row.get("correct", ""),
+                posture=str(row.get("posture", "")).replace("|", "/"),
+                score=row.get("score", ""),
+                missing=missing,
+            )
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _store_webcam_latest(original_frame, annotated_frame, result_payload: dict) -> bytes:
     original_jpeg = _encode_jpeg(original_frame)
     annotated_jpeg = _encode_jpeg(annotated_frame)
@@ -545,9 +800,19 @@ def _clean_reference(reference) -> dict:
             except (KeyError, TypeError, ValueError):
                 continue
 
+    raw_segment_angles = reference.get("segment_angles", {})
+    segment_angles = {}
+    if isinstance(raw_segment_angles, dict):
+        for name in SEGMENT_FIELD_NAMES:
+            try:
+                segment_angles[name] = round(float(raw_segment_angles[name]), 1)
+            except (KeyError, TypeError, ValueError):
+                continue
+
     return {
         "points": points,
         "angles": angles,
+        "segment_angles": segment_angles,
         "source": _clean_text(reference.get("source", "web"), 40),
         "updated_at": _clean_text(reference.get("updated_at", ""), 40),
     }
@@ -585,7 +850,9 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
         metadata = capture.get("metadata", {})
         reference = metadata.get("reference", {})
         result_angles = _angles_by_name(result)
+        result_segments = _segment_angles_by_name(result)
         reference_angles = reference.get("angles", {}) if isinstance(reference, dict) else {}
+        reference_segments = reference.get("segment_angles", {}) if isinstance(reference, dict) else {}
         rows.append(
             {
                 "index": index,
@@ -606,6 +873,30 @@ def _create_webcam_capture_zip(token: str, captures: list[dict]) -> Path:
                 "ear_shoulder_hip_angle": _angle_value(result_angles, "ear_shoulder_hip"),
                 "shoulder_hip_knee_angle": _angle_value(result_angles, "shoulder_hip_knee"),
                 "hip_knee_ankle_angle": _angle_value(result_angles, "hip_knee_ankle"),
+                "ear_shoulder_segment_angle": _segment_value(result_segments, "ear_shoulder"),
+                "shoulder_hip_segment_angle": _segment_value(result_segments, "shoulder_hip"),
+                "hip_knee_segment_angle": _segment_value(result_segments, "hip_knee"),
+                "knee_ankle_segment_angle": _segment_value(result_segments, "knee_ankle"),
+                "ear_shoulder_segment_reference_delta": _segment_reference_delta(
+                    result_segments,
+                    reference_segments,
+                    "ear_shoulder",
+                ),
+                "shoulder_hip_segment_reference_delta": _segment_reference_delta(
+                    result_segments,
+                    reference_segments,
+                    "shoulder_hip",
+                ),
+                "hip_knee_segment_reference_delta": _segment_reference_delta(
+                    result_segments,
+                    reference_segments,
+                    "hip_knee",
+                ),
+                "knee_ankle_segment_reference_delta": _segment_reference_delta(
+                    result_segments,
+                    reference_segments,
+                    "knee_ankle",
+                ),
                 "ear_shoulder_hip_reference_delta": _reference_delta(
                     result_angles,
                     reference_angles,
@@ -676,13 +967,37 @@ def _angles_by_name(result: dict) -> dict:
     return angles
 
 
+def _segment_angles_by_name(result: dict) -> dict:
+    angles = {}
+    for item in result.get("segment_angles", []) or []:
+        if isinstance(item, dict) and item.get("name"):
+            angles[item["name"]] = item
+    return angles
+
+
 def _angle_value(angles: dict, name: str):
+    value = angles.get(name, {}).get("angle")
+    return "" if value is None else value
+
+
+def _segment_value(angles: dict, name: str):
     value = angles.get(name, {}).get("angle")
     return "" if value is None else value
 
 
 def _reference_delta(result_angles: dict, reference_angles: dict, name: str):
     result_value = _angle_value(result_angles, name)
+    reference_value = reference_angles.get(name) if isinstance(reference_angles, dict) else None
+    if result_value == "" or reference_value is None:
+        return ""
+    try:
+        return round(float(result_value) - float(reference_value), 1)
+    except (TypeError, ValueError):
+        return ""
+
+
+def _segment_reference_delta(result_angles: dict, reference_angles: dict, name: str):
+    result_value = _segment_value(result_angles, name)
     reference_value = reference_angles.get(name) if isinstance(reference_angles, dict) else None
     if result_value == "" or reference_value is None:
         return ""

@@ -58,6 +58,28 @@ THRESHOLDS = {
 }
 
 # ---------------------------------------------------------------------------
+# Teacher reference-line segment thresholds.
+# These match the expected display:
+#   E-S: ear to shoulder, S-H: shoulder to hip,
+#   H-K: hip to knee, K-A: knee to ankle.
+# The value is the segment's deviation from the vertical green reference line.
+# ---------------------------------------------------------------------------
+
+SEGMENT_THRESHOLDS = {
+    "ear_shoulder": 10.0,
+    "shoulder_hip": 10.0,
+    "hip_knee": 10.0,
+    "knee_ankle": 10.0,
+}
+
+SEGMENT_SCORE_WEIGHTS = {
+    "ear_shoulder": 30,
+    "shoulder_hip": 30,
+    "hip_knee": 20,
+    "knee_ankle": 20,
+}
+
+# ---------------------------------------------------------------------------
 # Scoring weights (must sum to 100)
 # ---------------------------------------------------------------------------
 
@@ -86,5 +108,5 @@ COLOR_WARNING = (0, 200, 255)   # yellow
 COLOR_BAD = (0, 0, 255)         # red
 COLOR_WHITE = (255, 255, 255)
 COLOR_KEYPOINT = (0, 255, 255)  # cyan – highlighted keypoints
-COLOR_ALIGNMENT = (255, 165, 0) # orange – alignment line
-COLOR_REFERENCE = (190, 190, 190) # gray – posture reference line
+COLOR_ALIGNMENT = (0, 0, 255)   # red – current body segment line
+COLOR_REFERENCE = (0, 180, 0)   # green – good-posture reference line

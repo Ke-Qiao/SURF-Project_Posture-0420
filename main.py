@@ -125,8 +125,9 @@ def run_video(detector: PoseDetector, path: str) -> None:
 
 _IMG_EXTS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
-# Column order for the three angles
+# Column order for the auxiliary joint angles and teacher reference segments.
 _ANGLE_NAMES = ["ear_shoulder_hip", "shoulder_hip_knee", "hip_knee_ankle"]
+_SEGMENT_NAMES = ["ear_shoulder", "shoulder_hip", "hip_knee", "knee_ankle"]
 
 
 def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
@@ -146,6 +147,7 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
 
     fieldnames = (
         ["filename", "side"]
+        + [f"{n}_segment_angle" for n in _SEGMENT_NAMES]
         + [f"{n}_angle" for n in _ANGLE_NAMES]
         + [f"{n}_deviation" for n in _ANGLE_NAMES]
         + ["score", "posture", "issues"]
@@ -164,6 +166,10 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
         row: dict = {"filename": fname}
         if posture.detected and posture.view_valid:
             row["side"] = posture.side
+            segment_map = {ar.name: ar for ar in posture.segment_angles}
+            for n in _SEGMENT_NAMES:
+                ar = segment_map[n]
+                row[f"{n}_segment_angle"] = ar.angle
             angle_map = {ar.name: ar for ar in posture.angles}
             for n in _ANGLE_NAMES:
                 ar = angle_map[n]
@@ -175,6 +181,8 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
             tag = f"[{posture.score}/100 {'Good' if posture.overall_good else 'Bad'}]"
         elif posture.detected:
             row["side"] = posture.view
+            for n in _SEGMENT_NAMES:
+                row[f"{n}_segment_angle"] = ""
             for n in _ANGLE_NAMES:
                 row[f"{n}_angle"] = ""
                 row[f"{n}_deviation"] = ""
@@ -184,6 +192,8 @@ def run_batch(detector: PoseDetector, directory: str, csv_path: str) -> None:
             tag = "[Side view required]"
         else:
             row["side"] = ""
+            for n in _SEGMENT_NAMES:
+                row[f"{n}_segment_angle"] = ""
             for n in _ANGLE_NAMES:
                 row[f"{n}_angle"] = ""
                 row[f"{n}_deviation"] = ""
@@ -222,9 +232,9 @@ def _print_result(filename: str, p) -> None:
 
     status = "GOOD" if p.overall_good else "BAD"
     print(f"\n  {filename}  [{status}]  Score: {p.score}/100  (side: {p.side})")
-    for ar in p.angles:
+    for ar in p.segment_angles:
         flag = "OK" if ar.is_good else "!!"
-        print(f"    [{flag}] {ar.label}: {ar.angle} deg  (deviation: {ar.deviation} deg)")
+        print(f"    [{flag}] {ar.label}: {ar.angle} deg  (threshold: {ar.threshold} deg)")
     if p.advice:
         print("  Advice:")
         for a in p.advice:

@@ -21,13 +21,15 @@ git diff --check
 
 ## Web 检查
 
-- `/health` 返回 `week-02-fixed-reference-v1`。
+- `/health` 返回 `week-02-reference-angle-v3`。
 - HTTPS 模式下 `/health` 返回 `"https": true`。
-- image、video、webcam、batch 四种模式仍可切换。
+- image、video、webcam、batch、review 五种模式仍可切换。
 - Webcam 面板中 `Start computer camera` 和 `Start phone camera` 都显示出来。
 - Webcam 采集缺少 collector、subject 或 label 时会拒绝。
 - Webcam 采集缺少 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 任一项时会拒绝。
-- 页面默认使用 `fixed-good-posture-v1` 绿色参考骨架。
+- 页面默认使用 `fixed-good-posture-v1` 绿色参考线。
+- 右侧指标显示 E-S、S-H、H-K、K-A 四段 reference-line angle。
+- 四段角度理想值为 0 deg，当前 good 阈值不超过 10 deg。
 - `Use current pose as custom reference` 可以切换到自定义参考骨架。
 - `Reset to fixed good skeleton` 可以恢复固定参考骨架。
 - 满 10 张后 ZIP 可下载。
@@ -37,11 +39,22 @@ git diff --check
   - `manifest.csv`
   - `reference.json`
   - `summary.md`
+- Review 模式可以上传 good/bad 两组图片。
+- Review 完成后显示 Accuracy、Precision、Recall、F1、Needs Review。
+- Review ZIP 包含：
+  - `original/good/`
+  - `original/bad/`
+  - `annotated/good/`
+  - `annotated/bad/`
+  - `review_report.csv`
+  - `metrics.json`
+  - `summary.md`
 
 ## 数据检查
 
 - `manifest.csv` 包含 collector、subject_id、true_label。
 - `manifest.csv` 包含 profile_complete 和 missing_profile_parts。
+- `review_report.csv` 包含 true_label、predicted_label、evaluation_status、correct。
 - subject_id 不使用真实姓名。
 - 图片必须先给老师审核。
 - 只有审核通过的 clean side-view standing data 才上传 GitHub。

@@ -4,6 +4,7 @@ const panels = {
   image: document.querySelector("#imagePanel"),
   video: document.querySelector("#videoPanel"),
   batch: document.querySelector("#batchPanel"),
+  review: document.querySelector("#reviewPanel"),
 };
 
 const labels = {
@@ -11,6 +12,7 @@ const labels = {
   image: "Image",
   video: "Video",
   batch: "Batch",
+  review: "Review Dataset",
 };
 
 const statusBadge = document.querySelector("#statusBadge");
@@ -33,9 +35,13 @@ const footerAdvice = document.querySelector("#footerAdvice");
 const imageInput = document.querySelector("#imageInput");
 const videoInput = document.querySelector("#videoInput");
 const batchInput = document.querySelector("#batchInput");
+const reviewGoodInput = document.querySelector("#reviewGoodInput");
+const reviewBadInput = document.querySelector("#reviewBadInput");
 const teacherSource = document.querySelector("#teacherSource");
 const analyzeBatchButton = document.querySelector("#analyzeBatch");
+const reviewDatasetButton = document.querySelector("#reviewDataset");
 const downloadBatch = document.querySelector("#downloadBatch");
+const downloadReview = document.querySelector("#downloadReview");
 const downloadEvidence = document.querySelector("#downloadEvidence");
 const captureWebcamButton = document.querySelector("#captureWebcamSet");
 const webcamCaptureStatus = document.querySelector("#webcamCaptureStatus");
@@ -51,10 +57,11 @@ const resetReferenceButton = document.querySelector("#resetReference");
 const referenceStatus = document.querySelector("#referenceStatus");
 const referenceCtx = referenceCanvas.getContext("2d");
 const referencePointNames = ["ear", "shoulder", "hip", "knee", "ankle"];
-const referenceAngleNames = [
-  ["ear_shoulder_hip", "Forward Head", "ear", "shoulder", "hip"],
-  ["shoulder_hip_knee", "Trunk Lean", "shoulder", "hip", "knee"],
-  ["hip_knee_ankle", "Knee", "hip", "knee", "ankle"],
+const referenceSegmentAngleNames = [
+  ["ear_shoulder", "E-S", "ear", "shoulder"],
+  ["shoulder_hip", "S-H", "shoulder", "hip"],
+  ["hip_knee", "H-K", "hip", "knee"],
+  ["knee_ankle", "K-A", "knee", "ankle"],
 ];
 const fixedReferenceSource = "fixed-good-posture-v1";
 const customReferenceSource = "custom-current-pose";
@@ -62,13 +69,6 @@ const referenceStorageKey = "surfPostureReferenceSkeleton";
 const referenceModes = {
   fixed: "fixed",
   custom: "custom",
-};
-const fixedReferenceTemplate = {
-  ear: {x: 0, y: 0.06},
-  shoulder: {x: 0, y: 0.22},
-  hip: {x: 0, y: 0.48},
-  knee: {x: 0, y: 0.76},
-  ankle: {x: 0, y: 1},
 };
 let selectedMediaUrl = "";
 let activeStreamController = null;
@@ -103,6 +103,7 @@ document.querySelector("#stopWebcam").addEventListener("click", stopPreview);
 document.querySelector("#analyzeImage").addEventListener("click", analyzeImage);
 document.querySelector("#playVideo").addEventListener("click", analyzeVideo);
 analyzeBatchButton.addEventListener("click", analyzeBatch);
+reviewDatasetButton.addEventListener("click", reviewDataset);
 captureWebcamButton.addEventListener("click", captureWebcamSet);
 downloadEvidence.addEventListener("click", downloadCurrentEvidence);
 imageInput.addEventListener("change", previewSelectedImage);
@@ -539,6 +540,45 @@ async function analyzeBatch() {
   }
 }
 
+async function reviewDataset() {
+  const goodFiles = Array.from(reviewGoodInput.files || []);
+  const badFiles = Array.from(reviewBadInput.files || []);
+  if (goodFiles.length === 0 && badFiles.length === 0) {
+    setStatus("Choose review", "bad");
+    return;
+  }
+
+  stopActiveStream();
+  clearSelectedMediaUrl();
+  preview.removeAttribute("src");
+  previewVideo.removeAttribute("src");
+  preview.classList.remove("active");
+  previewVideo.classList.remove("active");
+  emptyState.style.display = "block";
+  resetMetrics("Reviewing dataset");
+  setStatus("Review running");
+
+  const form = new FormData();
+  goodFiles.forEach((file) => form.append("good_files", file));
+  badFiles.forEach((file) => form.append("bad_files", file));
+
+  try {
+    const response = await fetch("/api/review-dataset", {
+      method: "POST",
+      body: form,
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Dataset review failed.");
+    }
+    renderReviewSummary(payload);
+    setStatus("Review done", "good");
+  } catch (error) {
+    setStatus("Error", "bad");
+    showError(error.message);
+  }
+}
+
 async function captureWebcamSet() {
   if (webcamCaptureDownloadUrl) {
     window.location.href = webcamCaptureDownloadUrl;
@@ -598,6 +638,7 @@ async function captureWebcamSet() {
 function renderMetrics(result) {
   const advice = result.advice || [];
   const angles = result.angles || [];
+  const segmentAngles = result.segment_angles || [];
   latestResult = result;
   syncActiveReference();
   refreshEvidenceButton();
@@ -659,7 +700,7 @@ function renderMetrics(result) {
   footerPosture.className = result.overall_good ? "good" : "bad";
   footerMeta.textContent = `Score ${result.score}/100 / Side ${result.side || "-"}`;
 
-  angles.forEach((angle) => {
+  segmentAngles.forEach((angle) => {
     const item = document.createElement("div");
     item.className = `angle-item ${angle.is_good ? "good" : "bad"}`;
     item.innerHTML = `
@@ -667,15 +708,30 @@ function renderMetrics(result) {
         <span>${angle.label}</span>
         <span>${angle.angle} deg</span>
       </div>
-      <div class="angle-detail">Deviation ${angle.deviation} deg / threshold ${angle.threshold} deg</div>
+      <div class="angle-detail">${angle.start}-${angle.end} vs reference / threshold ${angle.threshold} deg</div>
     `;
     angleList.appendChild(item);
 
     const footerItem = document.createElement("span");
     footerItem.className = `footer-angle ${angle.is_good ? "good" : "bad"}`;
-    footerItem.textContent = `${angle.label}: ${angle.angle} deg, dev ${angle.deviation} deg`;
+    footerItem.textContent = `${angle.label}: ${angle.angle} deg`;
     footerAngles.appendChild(footerItem);
   });
+
+  if (!segmentAngles.length) {
+    angles.forEach((angle) => {
+      const item = document.createElement("div");
+      item.className = `angle-item ${angle.is_good ? "good" : "bad"}`;
+      item.innerHTML = `
+        <div class="angle-title">
+          <span>${angle.label}</span>
+          <span>${angle.angle} deg</span>
+        </div>
+        <div class="angle-detail">Deviation ${angle.deviation} deg / threshold ${angle.threshold} deg</div>
+      `;
+      angleList.appendChild(item);
+    });
+  }
 
   renderProfileParts(result);
   renderReferenceDiffs(result);
@@ -741,6 +797,66 @@ function renderBatchSummary(payload) {
   downloadBatch.hidden = false;
 }
 
+function renderReviewSummary(payload) {
+  const summary = payload.summary || {};
+  const matrix = summary.confusion_matrix || {};
+  const total = summary.total || 0;
+  const evaluated = summary.evaluated || 0;
+  const needsReview = summary.needs_review || 0;
+
+  postureValue.classList.remove("error-text");
+  postureValue.textContent = "Review complete";
+  scoreValue.textContent = `${evaluated}/${total} evaluated`;
+  sideValue.textContent = `F1 ${formatMetric(summary.f1)}`;
+  angleList.innerHTML = "";
+  profilePartList.innerHTML = "";
+  referenceDeltaList.innerHTML = "";
+  adviceList.innerHTML = "";
+  footerAngles.innerHTML = "";
+  footerAdvice.textContent = "mAP is not computed until ground-truth keypoint/box labels and model outputs exist.";
+  footerPosture.textContent = "Dataset review complete";
+  footerPosture.className = "good";
+  footerMeta.textContent = `Positive label: ${summary.positive_label || "bad"} / Needs review ${needsReview}`;
+
+  [
+    ["Accuracy", formatMetric(summary.accuracy), "good", "Correct predictions among evaluated good/bad rows"],
+    ["Precision", formatMetric(summary.precision), "good", "Bad-posture precision in this baseline review"],
+    ["Recall", formatMetric(summary.recall), "good", "Bad-posture recall in this baseline review"],
+    ["F1", formatMetric(summary.f1), "good", "Harmonic mean of precision and recall"],
+    ["Needs Review", needsReview, needsReview ? "bad" : "good", "Unscored rows such as no detection, front view, or incomplete profile"],
+    ["mAP", "N/A", "", "Requires ground-truth boxes/keypoints and trained detector outputs"],
+  ].forEach(([label, value, kind, detail]) => {
+    const item = document.createElement("div");
+    item.className = `angle-item ${kind}`;
+    item.innerHTML = `
+      <div class="angle-title">
+        <span>${label}</span>
+        <span>${value}</span>
+      </div>
+      <div class="angle-detail">${detail}</div>
+    `;
+    angleList.appendChild(item);
+
+    const footerItem = document.createElement("span");
+    footerItem.className = `footer-angle ${kind || "good"}`;
+    footerItem.textContent = `${label}: ${value}`;
+    footerAngles.appendChild(footerItem);
+  });
+
+  const confusion = document.createElement("div");
+  confusion.className = "advice-item";
+  confusion.textContent = `Confusion matrix: TP ${matrix.tp || 0}, FP ${matrix.fp || 0}, TN ${matrix.tn || 0}, FN ${matrix.fn || 0}.`;
+  adviceList.appendChild(confusion);
+
+  const note = document.createElement("div");
+  note.className = "advice-item";
+  note.textContent = "ZIP includes original images, annotated images, review_report.csv, metrics.json, and summary.md.";
+  adviceList.appendChild(note);
+
+  downloadReview.href = payload.download_url;
+  downloadReview.hidden = false;
+}
+
 function stopActiveStream() {
   if (activeStreamController) {
     activeStreamController.abort();
@@ -751,6 +867,8 @@ function stopActiveStream() {
 function resetBatchDownload() {
   downloadBatch.hidden = true;
   downloadBatch.removeAttribute("href");
+  downloadReview.hidden = true;
+  downloadReview.removeAttribute("href");
 }
 
 function updateWebcamCaptureUi(payload) {
@@ -860,6 +978,7 @@ function setReferenceFromCurrentPose() {
   customReferenceSkeleton = {
     points,
     angles: calculateReferenceAngles(points),
+    segment_angles: calculateReferenceSegmentAngles(points),
     source: customReferenceSource,
     updated_at: new Date().toISOString(),
   };
@@ -877,7 +996,7 @@ function setReferenceFromCurrentPose() {
 function toggleReferenceEditing() {
   if (referenceMode !== referenceModes.custom) {
     setStatus("Fixed reference", "bad");
-    referenceStatus.textContent = "Fixed good skeleton cannot be edited.";
+    referenceStatus.textContent = "Fixed reference line cannot be edited.";
     return;
   }
   if (!referenceComplete(customReferenceSkeleton)) {
@@ -921,6 +1040,7 @@ function loadCustomReferenceSkeleton() {
       return null;
     }
     parsed.angles = parsed.angles || calculateReferenceAngles(parsed.points);
+    parsed.segment_angles = parsed.segment_angles || calculateReferenceSegmentAngles(parsed.points);
     parsed.source = customReferenceSource;
     return parsed;
   } catch (error) {
@@ -950,33 +1070,17 @@ function buildFixedReferenceSkeleton(result) {
     return null;
   }
 
-  const yValues = referencePointNames.map((name) => current[name].y);
-  const ySpan = Math.max(...yValues) - Math.min(...yValues);
-  const earToAnkle = Math.abs(current.ankle.y - current.ear.y);
-  const height = clamp(Math.max(ySpan, earToAnkle), 0.12, 0.92);
-  const x = clamp(current.ankle.x, 0.05, 0.95);
-  const ankleY = clamp(current.ankle.y, 0.12, 0.97);
+  const x = referenceLineX(current);
 
   const points = {};
   referencePointNames.forEach((name) => {
-    const template = fixedReferenceTemplate[name];
     points[name] = {
       x,
-      y: ankleY - (1 - template.y) * height,
+      y: clamp(current[name].y, 0.03, 0.97),
     };
   });
 
-  const minY = Math.min(...referencePointNames.map((name) => points[name].y));
-  const maxY = Math.max(...referencePointNames.map((name) => points[name].y));
-  let yShift = 0;
-  if (minY < 0.03) {
-    yShift = 0.03 - minY;
-  } else if (maxY > 0.97) {
-    yShift = 0.97 - maxY;
-  }
-
   referencePointNames.forEach((name) => {
-    points[name].y = clamp(points[name].y + yShift, 0.03, 0.97);
     points[name].x = roundCoordinate(points[name].x);
     points[name].y = roundCoordinate(points[name].y);
   });
@@ -988,9 +1092,30 @@ function buildFixedReferenceSkeleton(result) {
       shoulder_hip_knee: 180,
       hip_knee_ankle: 180,
     },
+    segment_angles: {
+      ear_shoulder: 0,
+      shoulder_hip: 0,
+      hip_knee: 0,
+      knee_ankle: 0,
+    },
     source: fixedReferenceSource,
     updated_at: new Date().toISOString(),
   };
+}
+
+function referenceLineX(points) {
+  const values = ["shoulder", "hip", "knee", "ankle"]
+    .map((name) => points[name] && points[name].x)
+    .filter((value) => Number.isFinite(value))
+    .sort((a, b) => a - b);
+  if (!values.length) {
+    return 0.5;
+  }
+  const mid = Math.floor(values.length / 2);
+  const x = values.length % 2
+    ? values[mid]
+    : (values[mid - 1] + values[mid]) / 2;
+  return clamp(x, 0.05, 0.95);
 }
 
 function keypointsByName(result) {
@@ -1020,8 +1145,8 @@ function updateReferenceStatus() {
       : "No custom reference set";
   } else {
     referenceStatus.textContent = hasReference
-      ? "Fixed good skeleton"
-      : "Fixed reference waiting for pose";
+      ? "Fixed reference line"
+      : "Reference waiting for pose";
   }
   editReferenceButton.disabled = referenceMode !== referenceModes.custom;
   editReferenceButton.textContent = referenceEditing ? "Finish editing" : "Edit reference";
@@ -1044,9 +1169,20 @@ function drawReferenceOverlay() {
   }
 
   const mediaBox = currentMediaBox();
-  const points = referencePointNames.map((name) => normalizedToCanvas(referenceSkeleton.points[name], mediaBox));
+  const referencePointsByName = {};
+  referencePointNames.forEach((name) => {
+    referencePointsByName[name] = normalizedToCanvas(referenceSkeleton.points[name], mediaBox);
+  });
+  const points = referencePointNames.map((name) => referencePointsByName[name]);
+  const currentPointsByName = keypointsByName(latestResult);
+  const currentCanvasPointsByName = {};
+  if (currentPointsByName) {
+    referencePointNames.forEach((name) => {
+      currentCanvasPointsByName[name] = normalizedToCanvas(currentPointsByName[name], mediaBox);
+    });
+  }
 
-  referenceCtx.lineWidth = 3;
+  referenceCtx.lineWidth = 4;
   referenceCtx.strokeStyle = "#22a447";
   referenceCtx.fillStyle = "#22a447";
   referenceCtx.beginPath();
@@ -1073,24 +1209,89 @@ function drawReferenceOverlay() {
       referenceCtx.fillStyle = "#22a447";
     }
   });
+
+  if (currentPointsByName) {
+    const currentGood = latestResult && latestResult.overall_good;
+    const currentColor = currentGood ? "#22a447" : "#d22b2b";
+    referenceCtx.lineWidth = 4;
+    referenceCtx.strokeStyle = currentColor;
+    referenceCtx.fillStyle = currentColor;
+
+    referenceSegmentAngleNames.forEach(([, , startName, endName]) => {
+      const start = currentCanvasPointsByName[startName];
+      const end = referencePointsByName[endName];
+      if (!start || !end) {
+        return;
+      }
+      referenceCtx.beginPath();
+      referenceCtx.moveTo(start.x, start.y);
+      referenceCtx.lineTo(end.x, end.y);
+      referenceCtx.stroke();
+    });
+
+    referencePointNames.forEach((name) => {
+      const point = currentCanvasPointsByName[name];
+      if (!point) {
+        return;
+      }
+      referenceCtx.beginPath();
+      referenceCtx.arc(point.x, point.y, currentGood ? 5 : 7, 0, Math.PI * 2);
+      referenceCtx.fill();
+      referenceCtx.lineWidth = 2;
+      referenceCtx.strokeStyle = "#ffffff";
+      referenceCtx.stroke();
+      referenceCtx.fillStyle = currentColor;
+      referenceCtx.strokeStyle = currentColor;
+    });
+
+    drawSegmentAngleLabels(currentCanvasPointsByName, referencePointsByName, currentColor);
+  }
+}
+
+function drawSegmentAngleLabels(currentPointsByName, referencePointsByName, color) {
+  const segmentAngles = latestResult && Array.isArray(latestResult.segment_angles)
+    ? latestResult.segment_angles
+    : [];
+  if (!segmentAngles.length) {
+    return;
+  }
+  referenceCtx.font = "12px system-ui, sans-serif";
+  referenceCtx.fillStyle = color;
+  const angleByName = {};
+  segmentAngles.forEach((angle) => {
+    angleByName[angle.name] = angle;
+  });
+  referenceSegmentAngleNames.forEach(([name, label, startName, endName]) => {
+    const angle = angleByName[name];
+    const start = currentPointsByName[startName];
+    const end = referencePointsByName[endName];
+    if (!start || !end) {
+      return;
+    }
+    const x = (start.x + end.x) / 2 + 8;
+    const y = (start.y + end.y) / 2 - 6;
+    const value = angle ? angle.angle : "-";
+    referenceCtx.fillText(`${label} ${value} deg`, x, y);
+  });
 }
 
 function currentMediaBox() {
   const canvasRect = referenceCanvas.getBoundingClientRect();
   const media = preview.classList.contains("active") ? preview : previewVideo.classList.contains("active") ? previewVideo : null;
-  const mediaWidth = media === preview ? preview.naturalWidth : previewVideo.videoWidth;
-  const mediaHeight = media === preview ? preview.naturalHeight : previewVideo.videoHeight;
-  if (!media || !mediaWidth || !mediaHeight) {
+  if (!media) {
     return {x: 0, y: 0, width: canvasRect.width, height: canvasRect.height};
   }
-  const scale = Math.min(canvasRect.width / mediaWidth, canvasRect.height / mediaHeight);
-  const width = mediaWidth * scale;
-  const height = mediaHeight * scale;
+
+  const mediaRect = media.getBoundingClientRect();
+  if (!mediaRect.width || !mediaRect.height) {
+    return {x: 0, y: 0, width: canvasRect.width, height: canvasRect.height};
+  }
+
   return {
-    x: (canvasRect.width - width) / 2,
-    y: (canvasRect.height - height) / 2,
-    width,
-    height,
+    x: mediaRect.left - canvasRect.left,
+    y: mediaRect.top - canvasRect.top,
+    width: mediaRect.width,
+    height: mediaRect.height,
   };
 }
 
@@ -1134,6 +1335,7 @@ function dragReferencePoint(event) {
     mediaBox,
   );
   customReferenceSkeleton.angles = calculateReferenceAngles(customReferenceSkeleton.points);
+  customReferenceSkeleton.segment_angles = calculateReferenceSegmentAngles(customReferenceSkeleton.points);
   customReferenceSkeleton.updated_at = new Date().toISOString();
   referenceSkeleton = customReferenceSkeleton;
   saveCustomReferenceSkeleton();
@@ -1177,15 +1379,16 @@ function renderReferenceDiffs(result) {
     return;
   }
   referenceSkeleton.angles = referenceSkeleton.angles || calculateReferenceAngles(referenceSkeleton.points);
+  referenceSkeleton.segment_angles = referenceSkeleton.segment_angles || calculateReferenceSegmentAngles(referenceSkeleton.points);
 
-  const resultAngles = {};
-  (result && result.angles ? result.angles : []).forEach((angle) => {
-    resultAngles[angle.name] = angle.angle;
+  const resultSegments = {};
+  (result && result.segment_angles ? result.segment_angles : []).forEach((angle) => {
+    resultSegments[angle.name] = angle.angle;
   });
 
-  referenceAngleNames.forEach(([name, label]) => {
-    const referenceAngle = referenceSkeleton.angles[name];
-    const resultAngle = resultAngles[name];
+  referenceSegmentAngleNames.forEach(([name, label]) => {
+    const referenceAngle = referenceSkeleton.segment_angles[name] || 0;
+    const resultAngle = resultSegments[name];
     const item = document.createElement("div");
     item.className = "angle-item good";
     const deltaText = Number.isFinite(resultAngle)
@@ -1210,6 +1413,15 @@ function calculateReferenceAngles(points) {
   };
 }
 
+function calculateReferenceSegmentAngles(points) {
+  return {
+    ear_shoulder: roundAngle(verticalDeviation(points.ear, points.shoulder)),
+    shoulder_hip: roundAngle(verticalDeviation(points.shoulder, points.hip)),
+    hip_knee: roundAngle(verticalDeviation(points.hip, points.knee)),
+    knee_ankle: roundAngle(verticalDeviation(points.knee, points.ankle)),
+  };
+}
+
 function angleAt(a, b, c) {
   const ba = {x: a.x - b.x, y: a.y - b.y};
   const bc = {x: c.x - b.x, y: c.y - b.y};
@@ -1223,6 +1435,15 @@ function angleAt(a, b, c) {
   return Math.acos(cos) * 180 / Math.PI;
 }
 
+function verticalDeviation(a, b) {
+  const dx = Math.abs(a.x - b.x);
+  const dy = Math.abs(a.y - b.y);
+  if (!dx && !dy) {
+    return 0;
+  }
+  return Math.atan2(dx, dy) * 180 / Math.PI;
+}
+
 function roundAngle(value) {
   return Math.round(value * 10) / 10;
 }
@@ -1233,6 +1454,10 @@ function roundCoordinate(value) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function formatMetric(value) {
+  return Number.isFinite(value) ? value.toFixed(3) : "0.000";
 }
 
 function delay(ms) {

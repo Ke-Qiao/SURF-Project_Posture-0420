@@ -47,7 +47,16 @@ class BatchMediaResult:
     side: str = ""
     view: str = "unknown"
     view_valid: bool = False
+    profile_complete: bool = False
+    missing_profile_parts: str = ""
     knee_angle: float | None = None
+    ear_shoulder_hip_angle: float | None = None
+    shoulder_hip_knee_angle: float | None = None
+    hip_knee_ankle_angle: float | None = None
+    ear_shoulder_segment_angle: float | None = None
+    shoulder_hip_segment_angle: float | None = None
+    hip_knee_segment_angle: float | None = None
+    knee_ankle_segment_angle: float | None = None
     frames_sampled: int = 0
     standing_votes: int = 0
     sitting_votes: int = 0
@@ -66,7 +75,16 @@ class BatchMediaResult:
             "side": self.side,
             "view": self.view,
             "view_valid": self.view_valid,
+            "profile_complete": self.profile_complete,
+            "missing_profile_parts": self.missing_profile_parts,
             "knee_angle": "" if self.knee_angle is None else self.knee_angle,
+            "ear_shoulder_hip_angle": "" if self.ear_shoulder_hip_angle is None else self.ear_shoulder_hip_angle,
+            "shoulder_hip_knee_angle": "" if self.shoulder_hip_knee_angle is None else self.shoulder_hip_knee_angle,
+            "hip_knee_ankle_angle": "" if self.hip_knee_ankle_angle is None else self.hip_knee_ankle_angle,
+            "ear_shoulder_segment_angle": "" if self.ear_shoulder_segment_angle is None else self.ear_shoulder_segment_angle,
+            "shoulder_hip_segment_angle": "" if self.shoulder_hip_segment_angle is None else self.shoulder_hip_segment_angle,
+            "hip_knee_segment_angle": "" if self.hip_knee_segment_angle is None else self.hip_knee_segment_angle,
+            "knee_ankle_segment_angle": "" if self.knee_ankle_segment_angle is None else self.knee_ankle_segment_angle,
             "frames_sampled": self.frames_sampled,
             "standing_votes": self.standing_votes,
             "sitting_votes": self.sitting_votes,
@@ -155,6 +173,7 @@ def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchM
 
     result, classification, annotated = _process_frame(detector, frame)
     posture_payload = result_to_dict(result)
+    posture_details = _posture_details(posture_payload)
     media_result = BatchMediaResult(
         filename=filename,
         media_type="image",
@@ -167,7 +186,16 @@ def process_image_file(detector, image_path: str, filename: str) -> tuple[BatchM
         side=result.side,
         view=result.view,
         view_valid=result.view_valid,
+        profile_complete=posture_details["profile_complete"],
+        missing_profile_parts=posture_details["missing_profile_parts"],
         knee_angle=classification.knee_angle,
+        ear_shoulder_hip_angle=posture_details["ear_shoulder_hip_angle"],
+        shoulder_hip_knee_angle=posture_details["shoulder_hip_knee_angle"],
+        hip_knee_ankle_angle=posture_details["hip_knee_ankle_angle"],
+        ear_shoulder_segment_angle=posture_details["ear_shoulder_segment_angle"],
+        shoulder_hip_segment_angle=posture_details["shoulder_hip_segment_angle"],
+        hip_knee_segment_angle=posture_details["hip_knee_segment_angle"],
+        knee_ankle_segment_angle=posture_details["knee_ankle_segment_angle"],
         frames_sampled=1,
         standing_votes=1 if classification.category == CATEGORY_STANDING else 0,
         sitting_votes=1 if classification.category == CATEGORY_SITTING else 0,
@@ -235,6 +263,7 @@ def process_video_file(detector, video_path: str, filename: str, max_samples: in
     category = max(CATEGORIES, key=lambda item: votes[item])
     confidence = round(votes[category] / sampled, 2)
     posture_payload = result_to_dict(latest_result)
+    posture_details = _posture_details(posture_payload)
     media_result = BatchMediaResult(
         filename=filename,
         media_type="video",
@@ -247,7 +276,16 @@ def process_video_file(detector, video_path: str, filename: str, max_samples: in
         side=latest_result.side,
         view=latest_result.view,
         view_valid=latest_result.view_valid,
+        profile_complete=posture_details["profile_complete"],
+        missing_profile_parts=posture_details["missing_profile_parts"],
         knee_angle=latest_classification.knee_angle,
+        ear_shoulder_hip_angle=posture_details["ear_shoulder_hip_angle"],
+        shoulder_hip_knee_angle=posture_details["shoulder_hip_knee_angle"],
+        hip_knee_ankle_angle=posture_details["hip_knee_ankle_angle"],
+        ear_shoulder_segment_angle=posture_details["ear_shoulder_segment_angle"],
+        shoulder_hip_segment_angle=posture_details["shoulder_hip_segment_angle"],
+        hip_knee_segment_angle=posture_details["hip_knee_segment_angle"],
+        knee_ankle_segment_angle=posture_details["knee_ankle_segment_angle"],
         frames_sampled=sampled,
         standing_votes=votes[CATEGORY_STANDING],
         sitting_votes=votes[CATEGORY_SITTING],
@@ -301,6 +339,34 @@ def render_summary_markdown(summary: dict[str, Any], rows: list[dict[str, Any]])
         )
     lines.append("")
     return "\n".join(lines)
+
+
+def _posture_details(posture_payload: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "profile_complete": bool(posture_payload.get("profile_complete", False)),
+        "missing_profile_parts": ";".join(posture_payload.get("missing_profile_parts", []) or []),
+        "ear_shoulder_hip_angle": _angle_payload_value(posture_payload, "ear_shoulder_hip"),
+        "shoulder_hip_knee_angle": _angle_payload_value(posture_payload, "shoulder_hip_knee"),
+        "hip_knee_ankle_angle": _angle_payload_value(posture_payload, "hip_knee_ankle"),
+        "ear_shoulder_segment_angle": _segment_payload_value(posture_payload, "ear_shoulder"),
+        "shoulder_hip_segment_angle": _segment_payload_value(posture_payload, "shoulder_hip"),
+        "hip_knee_segment_angle": _segment_payload_value(posture_payload, "hip_knee"),
+        "knee_ankle_segment_angle": _segment_payload_value(posture_payload, "knee_ankle"),
+    }
+
+
+def _angle_payload_value(posture_payload: dict[str, Any], name: str) -> float | None:
+    for item in posture_payload.get("angles", []) or []:
+        if isinstance(item, dict) and item.get("name") == name:
+            return item.get("angle")
+    return None
+
+
+def _segment_payload_value(posture_payload: dict[str, Any], name: str) -> float | None:
+    for item in posture_payload.get("segment_angles", []) or []:
+        if isinstance(item, dict) and item.get("name") == name:
+            return item.get("angle")
+    return None
 
 
 def _process_frame(detector, frame):

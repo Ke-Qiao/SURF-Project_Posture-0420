@@ -194,6 +194,7 @@ English steps:
 | `Image` | Upload one image, preview it, and analyze posture. | 上传单张图片，先预览，再分析姿态。 |
 | `Video` | Upload one video, preview it, and analyze frames. | 上传一个视频，先预览，再逐帧分析。 |
 | `Batch` | Analyze multiple images/videos or teacher image folders, then export a categorized ZIP. | 批量分析图片/视频或老师提供的数据集，并导出分类 ZIP。 |
+| `Review` | Review labeled good/bad photos and export baseline metrics. | 审核已标注 good/bad 的照片，并导出 baseline 指标。 |
 
 Switching tabs stops the current preview stream and resets the displayed metrics.
 
@@ -242,7 +243,7 @@ photos requested by the teacher.
 3. Fill `Collector`, `Subject ID`, `True label`, and optional `Notes`.
 4. Tap `Start phone camera` and allow browser camera permission.
 5. Wait until the preview shows skeleton/metrics, not just the raw camera feed.
-6. Wait until the fixed green good-posture skeleton appears.
+6. Wait until the green ear-to-ankle reference line appears.
 7. Confirm the profile checklist shows Head, Neck, Shoulder, Hip, Buttock,
    Knees, and Ankle as visible.
 8. Tap `Capture / Download`; the app waits 3 seconds, analyzes the current
@@ -256,7 +257,7 @@ photos requested by the teacher.
 3. 填写 `Collector`、`Subject ID`、`True label` 和可选 `Notes`。
 4. 点击 `Start phone camera`，允许浏览器摄像头权限。
 5. 等页面出现骨骼和指标后再采集，不要只看原始相机画面。
-6. 等固定绿色 good-posture skeleton 出现。
+6. 等绿色 ear-to-ankle reference line 出现。
 7. 确认 Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle 都显示 visible。
 8. 点击 `Capture / Download`；平台倒计时 3 秒，分析当前手机帧，并保存到同一个 10 张 ZIP 队列。
 9. 满 10 张后点击 `Download capture ZIP`。
@@ -270,7 +271,7 @@ The app blocks capture if any of the following is missing:
 - `Collector`
 - `Subject ID`
 - `True label`
-- Fixed green good-posture skeleton generated from the active detected pose
+- Fixed green reference line generated from the active detected pose
 - Active webcam frame
 - Complete side profile
 
@@ -310,8 +311,8 @@ summary.md
 | File/Folder | English | 中文 |
 | --- | --- | --- |
 | `original/` | Original webcam frames. | 原始摄像头图片。 |
-| `mediapipe/` | Processed frames with MediaPipe skeleton and the active green reference skeleton. | 带 MediaPipe 骨架和当前绿色参考骨架的处理图。 |
-| `manifest.csv` | Per-image metadata: collector, subject, label, prediction, score, visibility checklist, angles, notes. | 每张图的元数据：采集者、subject、标签、预测、分数、部位可见性、角度、备注。 |
+| `mediapipe/` | Processed frames with MediaPipe skeleton, green reference line, and current body line. | 带 MediaPipe 骨架、绿色参考线和当前身体线的处理图。 |
+| `manifest.csv` | Per-image metadata: collector, subject, label, prediction, score, visibility checklist, E-S/S-H/H-K/K-A segment angles, notes. | 每张图的元数据：采集者、subject、标签、预测、分数、部位可见性、E-S/S-H/H-K/K-A 分段角度、备注。 |
 | `reference.json` | Green reference skeleton used during collection. Default source is `fixed-good-posture-v1`. | 采集时使用的绿色参考骨架。默认 source 是 `fixed-good-posture-v1`。 |
 | `summary.md` | Human-readable export summary. | 人类可读的导出摘要。 |
 
@@ -320,11 +321,30 @@ summary.md
 ## 4. Reference Skeleton Controls / 参考骨架控制
 
 The green reference skeleton defaults to a fixed good side-view posture
-baseline. It uses 180-degree good-posture angles and auto-aligns to the active
-detected body scale and ankle position.
+baseline. It uses the current detected ear, shoulder, hip, knee, and ankle
+heights, then places those reference points on a straight vertical line through
+the ankle.
 
-绿色参考骨架默认是固定 good side-view posture 基准。它使用 180 度 good-posture
-角度，并会根据当前检测到的人体尺度和脚踝位置自动对齐。
+绿色参考骨架默认是固定 good side-view posture 基准。它使用当前检测到的 ear、
+shoulder、hip、knee、ankle 的高度，再把这些 reference points 放到经过 ankle
+的垂直直线上。
+
+The main posture decision follows the teacher's reference-line rule:
+
+主姿态判断遵循老师的 reference-line 规则：
+
+| Segment | English | 中文 |
+| --- | --- | --- |
+| `E-S` | Ear to shoulder deviation from the green vertical reference. | ear 到 shoulder 这一段相对绿色垂直参考线的偏移角。 |
+| `S-H` | Shoulder to hip deviation from the green vertical reference. | shoulder 到 hip 这一段相对绿色垂直参考线的偏移角。 |
+| `H-K` | Hip to knee deviation from the green vertical reference. | hip 到 knee 这一段相对绿色垂直参考线的偏移角。 |
+| `K-A` | Knee to ankle deviation from the green vertical reference. | knee 到 ankle 这一段相对绿色垂直参考线的偏移角。 |
+
+Ideal good posture is `0 deg`. The current baseline accepts up to `10 deg` per
+segment. If any segment is above the threshold, the result is bad.
+
+理想 good posture 是 `0 deg`。当前 baseline 每一段最多允许 `10 deg`。任意一段超过
+阈值，就判定为 bad。
 
 | Control | English | 中文 |
 | --- | --- | --- |
@@ -419,15 +439,66 @@ Batch categories:
 
 ---
 
-## 8. Viewer And Metrics / 预览区和指标区
+## 8. Review Dataset Mode / Review Dataset 模式
+
+Use this mode after collecting good/bad photo candidates. It compares the
+manual true label against the current rule-based posture prediction and exports
+review files.
+
+在采集 good/bad 候选照片后使用这个模式。它会把人工真实标签和当前基于规则的姿态预测进行比较，并导出审核文件。
+
+### Review controls / Review 控件
+
+| UI | English | 中文 |
+| --- | --- | --- |
+| `Choose good photos` | Select photos whose true label is good posture. | 选择真实标签为 good posture 的照片。 |
+| `Choose bad photos` | Select photos whose true label is bad posture. | 选择真实标签为 bad posture 的照片。 |
+| `Review dataset` | Runs the baseline review and computes metrics. | 运行 baseline 审核并计算指标。 |
+| `Download review ZIP` | Appears after review is complete. Downloads the review export. | 审核完成后出现，用于下载审核 ZIP。 |
+
+The review ZIP contains:
+
+Review ZIP 包含：
+
+```text
+original/good/
+original/bad/
+annotated/good/
+annotated/bad/
+review_report.csv
+metrics.json
+summary.md
+```
+
+Metric meaning:
+
+指标含义：
+
+| Metric | English | 中文 |
+| --- | --- | --- |
+| `Accuracy` | Correct predictions among evaluated good/bad rows. | 在已评估 good/bad 样本中的正确率。 |
+| `Precision` | Bad-posture precision. Positive label is `bad`. | bad posture 的精确率；正类为 `bad`。 |
+| `Recall` | Bad-posture recall. Positive label is `bad`. | bad posture 的召回率；正类为 `bad`。 |
+| `F1` | Harmonic mean of Precision and Recall. | Precision 和 Recall 的调和平均数。 |
+| `Needs Review` | Rows not used in binary metrics, such as no detection, front view, or incomplete profile. | 未进入二分类指标的样本，例如未检测到人、正面图、身体不完整。 |
+| `mAP` | Not computed in this baseline review. It requires ground-truth boxes/keypoints and model confidence outputs. | 当前 baseline 审核不计算。它需要真实框/关键点标注和模型置信度输出。 |
+
+Use `review_report.csv` to decide which photos can be sent to the teacher for
+approval and which photos need retake or manual inspection.
+
+使用 `review_report.csv` 决定哪些照片可以发给老师审核，哪些照片需要重拍或人工检查。
+
+---
+
+## 9. Viewer And Metrics / 预览区和指标区
 
 ### Viewer legend / 预览图例
 
 | Legend | English | 中文 |
 | --- | --- | --- |
 | `Skeleton` | MediaPipe skeleton lines. | MediaPipe 骨架线。 |
-| `Side points` | Highlighted side-view posture points. | 高亮的侧视姿态关键点。 |
-| `Reference` | Green reference skeleton. | 绿色参考骨架。 |
+| `Current line` | Current detected body segment line. It turns red for bad posture. | 当前检测到的身体分段线。bad posture 时显示为红色。 |
+| `Reference` | Green vertical reference line and points. | 绿色垂直参考线和参考点。 |
 
 ### Right-side metrics / 右侧指标
 
@@ -436,14 +507,14 @@ Batch categories:
 | `Posture` | `Good`, `Bad`, `No detection`, `Side view required`, or `Incomplete profile`. | 姿态结果：`Good`、`Bad`、`No detection`、`Side view required` 或 `Incomplete profile`。 |
 | `Score` | Posture score from 0 to 100 when scoring is valid. | 有效评分时显示 0 到 100 的姿态分数。 |
 | `Side` | Detected side, usually `left` or `right`; may show `front` when front view is detected. | 检测到的侧面，通常是 `left` 或 `right`；正面时可能显示 `front`。 |
-| Angle cards | Forward Head, Trunk Lean, and Knee angle values and deviations. | 角度卡片：头前伸、躯干倾斜、膝盖角度及偏差。 |
+| Angle cards | E-S, S-H, H-K, and K-A segment deviations from the green reference line. | 角度卡片：E-S、S-H、H-K、K-A 相对绿色参考线的分段偏移角。 |
 | Profile checklist | Head, Neck, Shoulder, Hip, Buttock, Knees, Ankle visibility. | 部位可见性清单：Head、Neck、Shoulder、Hip、Buttock、Knees、Ankle。 |
-| Reference diff cards | Difference between current pose angles and green reference angles. | 当前姿态角度与绿色参考骨架角度的差值。 |
+| Reference diff cards | Difference between current segment angles and the reference value, normally 0 deg. | 当前分段角度与参考值的差值，通常参考值为 0 度。 |
 | Advice cards | Corrective suggestions when posture is bad or capture is invalid. | 姿态不良或采集无效时的建议。 |
 
 ---
 
-## 9. Download Evidence / 下载证据
+## 10. Download Evidence / 下载证据
 
 | Button | English | 中文 |
 | --- | --- | --- |
@@ -456,7 +527,7 @@ dataset ZIP.
 
 ---
 
-## 10. Common Status And Errors / 常见状态和错误
+## 11. Common Status And Errors / 常见状态和错误
 
 | Message | English meaning | 中文含义 |
 | --- | --- | --- |
@@ -469,10 +540,11 @@ dataset ZIP.
 | `Fixed reference waiting for a detected side pose.` | Capture blocked until a valid detected side pose can align the fixed skeleton. | 还没有有效侧视检测姿态，固定参考骨架无法对齐。 |
 | `ZIP ready` | Ten valid webcam captures are ready for download. | 已采集满 10 张，可以下载 ZIP。 |
 | `Capture error` | Capture request failed; read the status text for detail. | 采集失败，查看状态文字获取原因。 |
+| `Review done` | Dataset review completed and review ZIP is ready. | 数据集审核完成，review ZIP 已准备好。 |
 
 ---
 
-## 11. Recommended Collection Workflow / 推荐采集流程
+## 12. Recommended Collection Workflow / 推荐采集流程
 
 English:
 
@@ -481,11 +553,12 @@ English:
 3. Ask the subject to stand sideways against a clean background.
 4. Start `Start computer camera` on a laptop/desktop, or `Start phone camera`
    on a phone browser.
-5. Wait until the fixed green good-posture skeleton appears.
+5. Wait until the green ear-to-ankle reference line appears.
 6. Confirm all profile checklist parts are visible.
 7. Capture 10 photos for one label.
 8. Download ZIP.
-9. Send the ZIP or cloud link to the teacher for approval.
+9. Use `Review` mode to check the collected good/bad candidates.
+10. Send the ZIP or cloud link to the teacher for approval.
 
 中文：
 
@@ -494,8 +567,9 @@ English:
 3. 让被拍摄者在干净背景前侧身站立。
 4. 在电脑上点击 `Start computer camera`，或在手机浏览器上点击
    `Start phone camera`。
-5. 等固定绿色 good-posture skeleton 出现。
+5. 等绿色 ear-to-ankle reference line 出现。
 6. 确认所有 profile checklist 部位都显示 visible。
 7. 针对一个标签采集 10 张照片。
 8. 下载 ZIP。
-9. 将 ZIP 或云盘链接发给老师审核。
+9. 使用 `Review` 模式检查已采集的 good/bad 候选照片。
+10. 将 ZIP 或云盘链接发给老师审核。

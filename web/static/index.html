@@ -21,6 +21,7 @@
           <button class="mode-button" type="button" data-mode="image">Image</button>
           <button class="mode-button" type="button" data-mode="video">Video</button>
           <button class="mode-button" type="button" data-mode="batch">Batch</button>
+          <button class="mode-button" type="button" data-mode="review">Review</button>
         </div>
 
         <div id="webcamPanel" class="mode-panel active">
@@ -75,6 +76,19 @@
           <a id="downloadBatch" class="secondary-link" href="#" hidden>Download batch ZIP</a>
         </div>
 
+        <div id="reviewPanel" class="mode-panel">
+          <label class="file-picker">
+            <span>Choose good photos</span>
+            <input id="reviewGoodInput" type="file" accept="image/*" multiple>
+          </label>
+          <label class="file-picker">
+            <span>Choose bad photos</span>
+            <input id="reviewBadInput" type="file" accept="image/*" multiple>
+          </label>
+          <button id="reviewDataset" class="primary-button" type="button">Review dataset</button>
+          <a id="downloadReview" class="secondary-link" href="#" hidden>Download review ZIP</a>
+        </div>
+
         <button id="downloadEvidence" class="secondary-button evidence-button" type="button" disabled>Download evidence</button>
       </section>
 
@@ -83,7 +97,7 @@
           <span id="modeLabel">Webcam</span>
           <div class="legend" aria-label="Overlay legend">
             <span><i class="legend-skeleton"></i>Skeleton</span>
-            <span><i class="legend-keypoint"></i>Side points</span>
+            <span><i class="legend-keypoint"></i>Current line</span>
             <span><i class="legend-reference"></i>Reference</span>
           </div>
         </div>
@@ -122,8 +136,8 @@
           <button id="setReference" class="secondary-button" type="button">Use current pose as custom reference</button>
           <button id="editReference" class="secondary-button" type="button">Edit reference</button>
           <button id="toggleReference" class="secondary-button" type="button">Hide reference</button>
-          <button id="resetReference" class="secondary-button" type="button">Reset to fixed good skeleton</button>
-          <div id="referenceStatus" class="inline-status">Fixed reference waiting for pose</div>
+          <button id="resetReference" class="secondary-button" type="button">Reset to fixed reference</button>
+          <div id="referenceStatus" class="inline-status">Reference waiting for pose</div>
         </div>
         <div id="referenceDeltaList" class="angle-list"></div>
         <div id="adviceList" class="advice-list"></div>

@@ -7,11 +7,13 @@ project. The current scope is side-view standing posture only.
 
 - Runs the teacher baseline separately in `teacher_baseline.py`.
 - Runs the extended detector through `main.py`.
-- Provides a local web app for image, video, webcam, and batch review.
+- Provides a local web app for image, video, webcam, batch triage, and dataset review.
 - Uses webcam mode to collect labeled side-view posture photos.
 - Checks whether the teacher-required side-profile body parts are visible
   before saving webcam captures.
 - Exports local ZIP files for teacher review before data enters GitHub.
+- Reviews labeled good/bad photo sets and exports baseline Accuracy, Precision,
+  Recall, and F1 for dataset cleaning.
 
 The app does not train a model in the Week 2 platform step.
 
@@ -96,8 +98,8 @@ SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
 3. Ask the subject to stand sideways with the full body visible.
 4. Click `Start computer camera` on the laptop or `Start phone camera` on the
    phone.
-5. Wait until the fixed green good-posture skeleton appears over the detected
-   side-view body.
+5. Wait until the green reference line appears from ear height to ankle height
+   over the detected side-view body.
 6. Confirm the profile checklist shows the required body parts as visible.
 7. Click `Capture / Download`; each click waits 3 seconds and captures one
    frame.
@@ -106,8 +108,20 @@ SURF_PHONE_IP=192.168.2.3 ./start_phone_https_demo.command
    approved data to GitHub.
 
 The green reference skeleton defaults to `fixed-good-posture-v1`. It is
-auto-aligned to the detected side-view body and uses 180-degree good-posture
-angles. `Use current pose as custom reference` is available only as an optional
+auto-aligned to the detected side-view body by using the current ear, shoulder,
+hip, knee, and ankle heights on a straight vertical line through the ankle.
+The main Good/Bad decision uses four segment deviations from that line:
+
+```text
+E-S: ear to shoulder
+S-H: shoulder to hip
+H-K: hip to knee
+K-A: knee to ankle
+```
+
+The ideal value is `0 deg`. The current baseline allows up to `10 deg` per
+segment. If any segment exceeds that threshold, the posture is treated as bad.
+`Use current pose as custom reference` is available only as an optional
 debug/demo override.
 
 The profile checklist follows the teacher's latest requirement:
@@ -130,6 +144,39 @@ reference.json
 summary.md
 ```
 
+## Dataset Review Flow
+
+Use `Review` mode after collecting or receiving labeled good/bad photos.
+
+1. Put approved candidate photos into two local groups: `good` and `bad`.
+2. Open the web app and switch to `Review`.
+3. Select the good-posture photos with `Choose good photos`.
+4. Select the bad-posture photos with `Choose bad photos`.
+5. Click `Review dataset`.
+6. Check the displayed Accuracy, Precision, Recall, F1, and Needs Review count.
+7. Download the review ZIP and inspect `review_report.csv`.
+
+The review ZIP contains:
+
+```text
+original/good/
+original/bad/
+annotated/good/
+annotated/bad/
+review_report.csv
+metrics.json
+summary.md
+```
+
+Precision, Recall, and F1 use `bad` as the positive class, because detecting
+bad posture is the safety-critical baseline target. Rows with no detection,
+front view, or incomplete profile are marked `needs_review` and excluded from
+binary metrics.
+
+`mAP` is not computed in this baseline review. It requires ground-truth bounding
+boxes/keypoints and detector confidence outputs, which belong to the later model
+training/evaluation stage.
+
 ## GitHub Policy
 
 - Use a private repository for shared project code and approved data.
@@ -145,5 +192,7 @@ summary.md
 PYTHONPYCACHEPREFIX=/private/tmp/surf-posture-pycache .venv/bin/python -m py_compile teacher_baseline.py main.py posture/*.py scripts/*.py web/*.py tests/*.py
 node --check web/static/app.js
 zsh -n start_web_demo.command
+zsh -n start_phone_demo.command
+zsh -n start_phone_https_demo.command
 git diff --check
 ```

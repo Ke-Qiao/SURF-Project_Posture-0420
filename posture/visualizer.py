@@ -11,21 +11,15 @@ import numpy as np
 
 from posture.analyzer import PostureResult
 from posture.config import (
-    COLOR_ALIGNMENT,
     COLOR_BAD,
     COLOR_GOOD,
-    COLOR_KEYPOINT,
     COLOR_REFERENCE,
     COLOR_WARNING,
     COLOR_WHITE,
 )
 
-# Short display labels for the three angles
-_SHORT_LABELS = {
-    "ear_shoulder_hip": "Head",
-    "shoulder_hip_knee": "Trunk",
-    "hip_knee_ankle": "Knee",
-}
+_POINT_LABELS = ("Ear", "Shoulder", "Hip", "Knee", "Ankle")
+_SEGMENT_INDEXES = ((0, 1), (1, 2), (2, 3), (3, 4))
 
 
 def _status_color(deviation: float, threshold: float):
@@ -35,17 +29,6 @@ def _status_color(deviation: float, threshold: float):
     if deviation <= threshold * 2:
         return COLOR_WARNING
     return COLOR_BAD
-
-
-def _draw_dashed_vertical_line(frame, x: int, y1: int, y2: int, color) -> None:
-    """Draw a lightweight plumb line reference for side-view posture."""
-    dash = 10
-    gap = 8
-    cur = y1
-    while cur < y2:
-        end = min(cur + dash, y2)
-        cv2.line(frame, (x, cur), (x, end), color, 1)
-        cur = end + gap
 
 
 def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
@@ -110,37 +93,63 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
                 )
         return
 
+    if not show_text:
+        return
+
     # -- keypoints & alignment line -----------------------------------
     if result.keypoint_coords:
         px_pts = [(int(x * w), int(y * h)) for x, y in result.keypoint_coords]
 
-        # Plumb line: neutral side-view reference through the ankle.
-        ankle_x, _ = px_pts[-1]
+        # Green teacher reference: vertical good-posture line through the body
+        # axis. A median x anchor is more stable than trusting one ankle point.
+        reference_x = _reference_line_x(px_pts)
         top_y = max(0, min(y for _, y in px_pts) - 35)
         bottom_y = min(h - 1, max(y for _, y in px_pts) + 35)
-        _draw_dashed_vertical_line(frame, ankle_x, top_y, bottom_y, COLOR_REFERENCE)
+        reference_pts = [(reference_x, y) for _, y in px_pts]
+        cv2.line(frame, (reference_x, top_y), (reference_x, bottom_y), COLOR_REFERENCE, 3, cv2.LINE_AA)
+        for idx, pt in enumerate(reference_pts):
+            cv2.circle(frame, pt, 9, COLOR_REFERENCE, -1, cv2.LINE_AA)
+            cv2.circle(frame, pt, 10, COLOR_WHITE, 1, cv2.LINE_AA)
+            if show_text and idx < len(_POINT_LABELS):
+                cv2.putText(
+                    frame,
+                    _POINT_LABELS[idx],
+                    (min(w - 120, pt[0] + 12), max(18, pt[1] + 5)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.42,
+                    COLOR_REFERENCE,
+                    1,
+                    cv2.LINE_AA,
+                )
         if show_text:
             cv2.putText(
                 frame,
-                "plumb line",
-                (max(5, ankle_x + 8), max(18, top_y + 14)),
+                "reference",
+                (max(5, reference_x + 8), max(18, top_y + 14)),
                 cv2.FONT_HERSHEY_SIMPLEX,
                 0.38,
                 COLOR_REFERENCE,
                 1,
             )
 
-        # alignment line (ear → ankle)
-        for i in range(len(px_pts) - 1):
-            cv2.line(frame, px_pts[i], px_pts[i + 1], COLOR_ALIGNMENT, 2)
+        # Current segment tilt against the green reference line. Each red/green
+        # segment starts at the detected upper point and ends at the next
+        # point's height on the reference axis, matching the teacher diagram.
+        current_color = COLOR_GOOD if result.overall_good else COLOR_BAD
+        for start_idx, end_idx in _SEGMENT_INDEXES:
+            cv2.line(
+                frame,
+                px_pts[start_idx],
+                reference_pts[end_idx],
+                current_color,
+                3,
+                cv2.LINE_AA,
+            )
 
-        # keypoint dots
+        # Current keypoint dots
         for pt in px_pts:
-            cv2.circle(frame, pt, 6, COLOR_KEYPOINT, -1)
-            cv2.circle(frame, pt, 7, COLOR_WHITE, 1)
-
-    if not show_text:
-        return
+            cv2.circle(frame, pt, 6, current_color, -1, cv2.LINE_AA)
+            cv2.circle(frame, pt, 7, COLOR_WHITE, 1, cv2.LINE_AA)
 
     # -- top-left: verdict + score ------------------------------------
     verdict = "Good Posture" if result.overall_good else "Bad Posture"
@@ -160,7 +169,7 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
         cv2.FONT_HERSHEY_SIMPLEX, 0.6, s_color, 2,
     )
 
-    # -- right panel: angle details -----------------------------------
+    # -- right panel: teacher reference-line segment angles ------------
     panel_x = w - 280
     y_cur = 30
 
@@ -169,10 +178,9 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
         cv2.FONT_HERSHEY_SIMPLEX, 0.5, COLOR_WHITE, 1,
     )
 
-    for ar in result.angles:
+    for ar in result.segment_angles:
         y_cur += 35
-        color = _status_color(ar.deviation, ar.threshold)
-        short = _SHORT_LABELS.get(ar.name, ar.name)
+        color = _status_color(ar.angle, ar.threshold)
 
         # colour bar
         cv2.rectangle(
@@ -185,12 +193,12 @@ def draw_analysis(frame, result: PostureResult, show_text: bool = True) -> None:
 
         # angle value
         cv2.putText(
-            frame, f"{short}: {ar.angle:.1f} deg", (panel_x, y_cur),
+            frame, f"{ar.label}: {ar.angle:.1f} deg", (panel_x, y_cur),
             cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 1,
         )
 
         # deviation / OK
-        status = "OK" if ar.is_good else f"dev {ar.deviation:.1f} deg"
+        status = "OK" if ar.is_good else f"limit {ar.threshold:.1f} deg"
         cv2.putText(
             frame, status, (panel_x, y_cur + 16),
             cv2.FONT_HERSHEY_SIMPLEX, 0.42, color, 1,
@@ -270,12 +278,11 @@ def append_analysis_footer(frame, result: PostureResult):
 
     x = 18
     y = 91
-    for angle in result.angles:
+    for angle in result.segment_angles:
         color = good if angle.is_good else warn
-        label = _SHORT_LABELS.get(angle.name, angle.label)
-        chunk = f"{label}: {angle.angle} deg, dev {angle.deviation} deg"
+        chunk = f"{angle.label}: {angle.angle} deg"
         _put_footer_text(footer, chunk, (x, y), color, 0.42, 1)
-        x += max(210, int(w / 3.2))
+        x += max(150, int(w / 4.5))
         if x > w - 220:
             break
 
@@ -321,3 +328,14 @@ def _fit_text(text: str, max_width: int, scale: float, margin: int) -> str:
             return candidate
         trimmed = trimmed[:-1]
     return ellipsis
+
+
+def _reference_line_x(px_pts) -> int:
+    """Use shoulder/hip/knee/ankle median x as a stable vertical axis."""
+    if len(px_pts) < 5:
+        return px_pts[-1][0] if px_pts else 0
+    values = sorted(x for x, _ in px_pts[1:])
+    mid = len(values) // 2
+    if len(values) % 2:
+        return int(values[mid])
+    return int((values[mid - 1] + values[mid]) / 2)

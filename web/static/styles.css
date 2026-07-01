@@ -73,6 +73,7 @@ select {
 .layout {
   display: grid;
   grid-template-columns: 310px minmax(420px, 1fr) 300px;
+  align-items: start;
   gap: 18px;
   padding: 18px;
 }
@@ -92,7 +93,7 @@ select {
 
 .segmented {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   border: 1px solid var(--border);
   border-radius: 8px;
   overflow: hidden;
@@ -106,7 +107,7 @@ select {
   background: #f9fbfa;
   color: var(--muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .mode-button:last-child {
@@ -234,7 +235,8 @@ select {
 .viewer {
   display: grid;
   grid-template-rows: auto auto auto;
-  overflow: hidden;
+  align-content: start;
+  overflow: visible;
 }
 
 .viewer-header {
@@ -277,7 +279,7 @@ select {
 }
 
 .legend-keypoint {
-  background: #00c8d7;
+  background: #d22b2b;
 }
 
 .legend-reference {
@@ -289,16 +291,18 @@ select {
   display: grid;
   place-items: center;
   width: 100%;
-  aspect-ratio: 16 / 9;
-  min-height: 0;
+  min-height: 360px;
+  overflow: visible;
   background: #151817;
 }
 
 .frame img,
 .frame video {
   display: none;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  max-width: 100%;
+  max-height: calc(100vh - 260px);
+  height: auto;
   object-fit: contain;
 }
 
@@ -325,6 +329,9 @@ select {
 }
 
 .empty-state {
+  display: grid;
+  min-height: 360px;
+  place-items: center;
   color: #d4ddda;
   font-size: 15px;
 }
@@ -387,6 +394,8 @@ select {
 
 .metrics {
   padding: 16px;
+  max-height: calc(100vh - 120px);
+  overflow-y: auto;
 }
 
 .metric-row {
